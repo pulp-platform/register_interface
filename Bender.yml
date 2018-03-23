@@ -1,0 +1,7 @@
+package:
+  name: register_interface
+  authors: ["Fabian Schuiki <fschuiki@iis.ee.ethz.ch>"]
+
+sources:
+  - src/reg_intf.sv
+  - src/reg_uniform.sv
