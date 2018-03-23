@@ -9,17 +9,15 @@
 //
 // Fabian Schuiki <fschuiki@iis.ee.ethz.ch>
 
-timeunit 1ns/1ps;
-
 /// A set of testbench utilities for AXI interfaces.
 package reg_test;
 
   /// A driver for AXI4-Lite interface.
   class reg_driver #(
-    parameter int  AW       ,
-    parameter int  DW       ,
-    parameter time TA = 0ns , // stimuli application time
-    parameter time TT = 0ns   // stimuli test time
+    parameter int  AW     ,
+    parameter int  DW     ,
+    parameter time TA = 0 , // stimuli application time
+    parameter time TT = 0   // stimuli test time
   );
     virtual REG_BUS #(
       .ADDR_WIDTH(AW),
