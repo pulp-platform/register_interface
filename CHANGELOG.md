@@ -11,3 +11,4 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Add register bus interfaces.
 - Add uniform register.
 - Add AXI-Lite to register bus adapter.
+- Add test package with testbench utilities.

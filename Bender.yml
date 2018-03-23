@@ -5,3 +5,6 @@ package:
 sources:
   - src/reg_intf.sv
   - src/reg_uniform.sv
+  - target: test
+    files:
+      - src/reg_test.sv
