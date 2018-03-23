@@ -23,6 +23,8 @@ interface REG_BUS #(
   parameter int ADDR_WIDTH = -1,
   /// The width of the data.
   parameter int DATA_WIDTH = -1
+)(
+  input logic clk_i
 );
 
   logic [ADDR_WIDTH-1:0]   addr;
