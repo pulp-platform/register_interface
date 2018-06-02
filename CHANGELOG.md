@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## 0.1.3 - 2018-06-02
+### Fixed
+- Add `axi_lite_to_reg.sv` to list of source files.
+
 ## 0.1.2 - 2018-03-23
 ### Fixed
 - Remove time unit from test package. Fixes delay annotation issues.
