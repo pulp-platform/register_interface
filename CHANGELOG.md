@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+### Added
+- AXI to reg interface
 - Opensource release
 
 ## 0.1.3 - 2018-06-02
