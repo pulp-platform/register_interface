@@ -31,7 +31,6 @@ module apb_to_reg (
     reg_o.write = pwrite_i;
     reg_o.wdata = pwdata_i;
     reg_o.wstrb = '1;
-    reg_o.error = pslverr_o;
     reg_o.valid = psel_i & penable_i;
     pready_o = reg_o.ready;
     pslverr_o = reg_o.error;
