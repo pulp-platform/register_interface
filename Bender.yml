@@ -8,7 +8,7 @@ sources:
   - src/reg_intf.sv
   - src/reg_uniform.sv
   - src/axi_lite_to_reg.sv
-  - src/axi_lite_to_reg.sv
+  - src/apb_to_reg.sv
   - target: test
     files:
       - src/reg_test.sv
