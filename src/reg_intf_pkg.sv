@@ -44,13 +44,13 @@ package reg_intf;
         logic [31:0] rdata;
         logic        error;
         logic        ready;
-    } reg_intf_req_d32;
+    } reg_intf_resp_d32;
 
     /// 32 bit Response packages
     typedef struct packed {
         logic [63:0] rdata;
         logic        error;
         logic        ready;
-    } reg_intf_req_d64;
+    } reg_intf_resp_d64;
 
 endpackage
