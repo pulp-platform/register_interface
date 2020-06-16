@@ -3,8 +3,8 @@ package:
   authors: ["Fabian Schuiki <fschuiki@iis.ee.ethz.ch>", "Florian Zaruba <zarubaf@iis.ee.ethz.ch>"]
 
 dependencies:
-  axi: { git: "https://github.com/pulp-platform/axi.git", version: 0.4.5 }
   common_cells: { git: "https://github.com/pulp-platform/common_cells.git", version: 1.16.4 }
+  axi: { git: "https://github.com/pulp-platform/axi.git", version: 0.23.0 }
 
   sources:
   - src/reg_intf.sv
