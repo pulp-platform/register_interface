@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+### Fixed
+- Fix bug in AXI-Lite to register interface conversion
+
 ### Added
 - AXI to reg interface
 - Opensource release
