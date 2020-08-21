@@ -10,8 +10,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Fix bug in AXI-Lite to register interface conversion
 
 ### Added
-- AXI to reg interface
-- Opensource release
+- Add `typedef` and `assign` macros.
+- Add `reg_cdc`.
+- Add `reg_demux`.
+- Add `reg_mux`.
+- Add `reg_to_mem`.
+- AXI to reg interface.
+- Open source release.
 
 ### Changed
 - Updated AXI dependency
