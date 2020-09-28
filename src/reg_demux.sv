@@ -31,7 +31,7 @@ module reg_demux #(
     out_req_o = '0;
     in_rsp_o = '0;
     out_req_o[in_select_i] = in_req_i;
-    in_rsp_o[in_select_i] = out_rsp_i[in_select_i];
+    in_rsp_o = out_rsp_i[in_select_i];
   end
 
 endmodule
