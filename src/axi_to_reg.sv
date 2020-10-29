@@ -38,8 +38,8 @@ module axi_to_reg #(
   input  logic  clk_i             ,
   input  logic  rst_ni            ,
   input  logic  testmode_i        ,
-  input  axi_req_t  axi_lite_req_i,
-  output axi_rsp_t  axi_lite_rsp_o,
+  input  axi_req_t  axi_req_i,
+  output axi_rsp_t  axi_rsp_o,
   output reg_req_t  reg_req_o     ,
   input  reg_rsp_t  reg_rsp_i
 );
@@ -78,8 +78,8 @@ module axi_to_reg #(
     .clk_i,
     .rst_ni,
     .test_i ( testmode_i ),
-    .slv_req_i (axi_lite_req_i),
-    .slv_resp_o (axi_lite_rsp_o),
+    .slv_req_i (axi_req_i),
+    .slv_resp_o (axi_rsp_o),
     .mst_req_o (axi_lite_req),
     .mst_resp_i (axi_lite_resp)
   );
