@@ -22,6 +22,21 @@ register_interface:
     # Level 2
     - src/axi_lite_to_reg.sv
 
+reggen_primitives:
+  vlog_opts:
+    - -L common_cells_lib
+    - -L axi_lib
+
+  incdirs:
+    - include
+    - ../axi/axi/include
+    - ../common_cells/include
+  files:
+    - vendor/lowrisc_opentitan/src/prim_subreg.sv
+    - vendor/lowrisc_opentitan/src/prim_subreg_arb.sv
+    - vendor/lowrisc_opentitan/src/prim_subreg_ext.sv
+    - vendor/lowrisc_opentitan/src/prim_subreg_shadow.sv
+
 register_interface_test:
   vlog_opts:
     - -L common_cells_lib
