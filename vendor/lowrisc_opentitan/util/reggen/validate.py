@@ -48,7 +48,7 @@ def check_count(top, mreg, err_prefix):
         top["param_list"].append({
             "name": mreg["name"],
             "type": "int",
-            "default": mcount,
+            "default": str(mcount),
             "desc": "auto added parameter",
             "local": "true"
         })
