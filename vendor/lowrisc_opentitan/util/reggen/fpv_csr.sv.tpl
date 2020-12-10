@@ -15,7 +15,7 @@
 ${construct_classes(b)}
 % endfor
 
-`include "prim_assert.sv"
+`include "common_cells/assertions.svh"
 
 // Block: ${block.name}
 module ${block.name}_csr_assert_fpv import tlul_pkg::*; import ${block.name}_reg_pkg::*; (
