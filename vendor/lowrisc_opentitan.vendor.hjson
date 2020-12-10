@@ -20,10 +20,6 @@
       {from: 'hw/ip/prim/rtl/prim_subreg_arb.sv', to: 'src/prim_subreg_arb.sv' }
       {from: 'hw/ip/prim/rtl/prim_subreg_ext.sv', to: 'src/prim_subreg_ext.sv' }
       {from: 'hw/ip/prim/rtl/prim_subreg_shadow.sv', to: 'src/prim_subreg_shadow.sv' }
-      {from: 'hw/ip/prim/rtl/prim_assert.sv', to: 'include/prim_assert.sv' }
-      {from: 'hw/ip/prim/rtl/prim_assert_dummy_macros.svh', to: 'include/prim_assert_dummy_macros.svh' }
-      {from: 'hw/ip/prim/rtl/prim_assert_standard_macros.svh', to: 'include/prim_assert_standard_macros.svh' }
-      {from: 'hw/ip/prim/rtl/prim_assert_yosys_macros.svh', to: 'include/prim_assert_yosys_macros.svh' }
   ]
 
 }
