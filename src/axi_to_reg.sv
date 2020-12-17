@@ -121,6 +121,10 @@ module axi_to_reg_intf #(
   parameter int ID_WIDTH = -1,
   /// The width of the user signal.
   parameter int USER_WIDTH = -1,
+  /// Maximum number of outstanding writes.
+  parameter int unsigned AXI_MAX_WRITE_TXNS = 32'd2,
+  /// Maximum number of outstanding reads.
+  parameter int unsigned AXI_MAX_READ_TXNS  = 32'd2,
   /// Whether the AXI-Lite W channel should be decoupled with a register. This
   /// can help break long paths at the expense of registers.
   parameter bit DECOUPLE_W = 1
