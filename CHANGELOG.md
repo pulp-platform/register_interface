@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Fixed
 - Fix bug in AXI-Lite to register interface conversion
 
+## Removed
+- Remove `reg_intf_pkg.sv`. Type definitions are provided by `typedef.svh`.
+
 ### Added
+- Add `reggen` tool from lowrisc.
 - Add `typedef` and `assign` macros.
 - Add `reg_cdc`.
 - Add `reg_demux`.
