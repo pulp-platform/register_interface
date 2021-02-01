@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Changed
 - Updated AXI dependency
+- Updated `common_cells` dependency to v1.21.0
 
 ## 0.1.3 - 2018-06-02
 ### Fixed
