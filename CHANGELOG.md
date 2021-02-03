@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## 0.2.1 - 2021-02-03
+### Changed
+- Update `axi` to `0.23.0`
+- Update `common_cells` to `1.21.0`
+
+### Added
+- Add ipapprox description
+
 ## 0.2.0 - 2020-12-30
 ### Fixed
 - Fix bug in AXI-Lite to register interface conversion
@@ -26,7 +34,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Changed
 - Updated AXI dependency
-- Updated `common_cells` dependency to v1.21.0
 
 ## 0.1.3 - 2018-06-02
 ### Fixed
