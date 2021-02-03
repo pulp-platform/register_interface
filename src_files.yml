@@ -9,7 +9,6 @@ register_interface:
     - ../common_cells/include
   files:
     # Level 0
-    - src/reg_intf_pkg.sv
     - src/reg_intf.sv
     # Level 1
     - src/apb_to_reg.sv
