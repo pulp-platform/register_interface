@@ -13,6 +13,7 @@ register_interface:
     # Level 1
     - src/apb_to_reg.sv
     - src/axi_to_reg.sv
+    - src/periph_to_reg.sv
     - src/reg_cdc.sv
     - src/reg_demux.sv
     - src/reg_mux.sv
