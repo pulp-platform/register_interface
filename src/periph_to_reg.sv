@@ -50,7 +50,7 @@ module periph_to_reg #(
   end
   
   always_ff @(posedge clk_i or negedge rst_ni) begin : proc_seq
-    if(~rst_ni) begin
+    if (!rst_ni) begin
       r_id_q <= '0;
       r_opc_q <= '0;
       r_valid_q <= '0;
@@ -103,4 +103,3 @@ module periph_to_reg #(
 */
 
 endmodule
-
