@@ -48,7 +48,7 @@ module periph_to_reg #(
     r_valid_d = gnt_o;
     r_rdata_d = reg_rsp_i.rdata;
   end
-  
+
   always_ff @(posedge clk_i or negedge rst_ni) begin : proc_seq
     if (!rst_ni) begin
       r_id_q <= '0;
