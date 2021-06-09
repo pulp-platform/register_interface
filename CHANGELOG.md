@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+
+## 0.3.0 - 2021-06-09
 ### Changed
 - Rebased register_interface specific change of reggen tool on lowRISC upstream master
 - Bump AXI version
