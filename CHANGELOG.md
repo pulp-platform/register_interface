@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Fixed
+- Align AXI version in ips_list.yml with Bender.yml
 
 ## 0.3.0 - 2021-06-09
 ### Changed
