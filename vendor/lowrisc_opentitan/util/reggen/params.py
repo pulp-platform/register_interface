@@ -4,7 +4,7 @@
 
 import re
 from collections.abc import MutableMapping
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterator, List, Optional, Tuple
 
 from .lib import check_keys, check_str, check_int, check_bool, check_list
 
@@ -115,6 +115,14 @@ class RandParameter(BaseParam):
         return rd
 
 
+class MemSizeParameter(BaseParam):
+    def __init__(self,
+                 name: str,
+                 desc: Optional[str],
+                 param_type: str):
+        super().__init__(name, desc, param_type)
+
+
 def _parse_parameter(where: str, raw: object) -> BaseParam:
     rd = check_keys(raw, where,
                     list(REQUIRED_FIELDS.keys()),
@@ -198,6 +206,36 @@ def _parse_parameter(where: str, raw: object) -> BaseParam:
                              "with RndCnst."
                              .format(where=where, name=name, fld=fld))
 
+    if name.lower().startswith('memsize'):
+        r_type = rd.get('type')
+        if r_type is None:
+            raise ValueError('At {}, parameter {} has no type field (which is '
+                             'required for memory size parameters).'
+                             .format(where, name))
+        param_type = check_str(r_type, 'type field of ' + where)
+
+        if rd.get('type') != "int":
+            raise ValueError('At {}, memory size parameter {} must be of type integer.'
+                             .format(where, name))
+
+        local = check_bool(rd.get('local', 'false'), 'local field of ' + where)
+        if local:
+            raise ValueError('At {}, the parameter {} specifies local = true, '
+                             'meaning that it is a localparam. This is '
+                             'incompatible with being a memory size parameter.'
+                             .format(where, name))
+
+        expose = check_bool(rd.get('expose', 'false'),
+                            'expose field of ' + where)
+        if expose:
+            raise ValueError('At {}, the parameter {} specifies expose = '
+                             'true, meaning that the parameter is exposed to '
+                             'the top-level. This is incompatible with '
+                             'being a memory size parameter.'
+                             .format(where, name))
+
+        return MemSizeParameter(name, desc, param_type)
+
     r_type = rd.get('type')
     if r_type is None:
         param_type = 'int'
@@ -228,26 +266,31 @@ def _parse_parameter(where: str, raw: object) -> BaseParam:
         return Parameter(name, desc, param_type, default, expose)
 
 
-class Params(MutableMapping):
+# Note: With a modern enough Python, we'd like this to derive from
+#       "MutableMapping[str, BaseParam]". Unfortunately, this doesn't work with
+#       Python 3.6 (where collections.abc.MutableMapping isn't subscriptable).
+#       So we derive from just "MutableMapping" and tell mypy not to worry
+#       about it.
+class Params(MutableMapping):  # type: ignore
     def __init__(self) -> None:
         self.by_name = {}  # type: Dict[str, BaseParam]
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> BaseParam:
         return self.by_name[key]
 
-    def __delitem__(self, key):
+    def __delitem__(self, key: str) -> None:
         del self.by_name[key]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: str, value: BaseParam) -> None:
         self.by_name[key] = value
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:
         return iter(self.by_name)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.by_name)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{type(self).__name__}({self.by_name})"
 
     def add(self, param: BaseParam) -> None:

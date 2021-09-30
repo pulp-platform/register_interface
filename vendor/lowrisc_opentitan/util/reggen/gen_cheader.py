@@ -25,13 +25,15 @@ from .window import Window
 def genout(outfile: TextIO, msg: str) -> None:
     outfile.write(msg)
 
+
 def to_snake_case(s: str) -> str:
     val = []
     for i, ch in enumerate(s):
-      if i > 0 and ch.isupper():
-        val.append('_')
-      val.append(ch)
+        if i > 0 and ch.isupper():
+            val.append('_')
+        val.append(ch)
     return ''.join(val)
+
 
 def as_define(s: str) -> str:
     s = s.upper()
@@ -122,6 +124,10 @@ def gen_cdefine_register(outstr: TextIO,
     genout(
         outstr,
         gen_define(defname + '_REG_OFFSET', [], hex(offset), existing_defines))
+    genout(
+        outstr,
+        gen_define(defname + '_REG_RESVAL', [],
+                   hex(reg.resval), existing_defines))
 
     for field in reg.fields:
         dname = defname + '_' + as_define(field.name)

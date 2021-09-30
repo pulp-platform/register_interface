@@ -25,12 +25,7 @@ num_im = sum([x["width"] if "width" in x else 1 for x in top["inter_signal"]["ex
 max_sigwidth = max([x["width"] if "width" in x else 1 for x in top["pinmux"]["ios"]])
 max_sigwidth = len("{}".format(max_sigwidth))
 
-clks_attr = top['clocks']
-cpu_clk = top['clocks']['hier_paths']['top'] + "clk_proc_main"
-cpu_rst = top["reset_paths"]["sys"]
-dm_rst = top["reset_paths"]["lc"]
-esc_clk = top['clocks']['hier_paths']['top'] + "clk_io_div4_timers"
-esc_rst = top["reset_paths"]["sys_io_div4"]
+cpu_clk = top['clocks'].hier_paths['top'] + "clk_proc_main"
 
 unused_resets = lib.get_unused_resets(top)
 unused_im_defs, undriven_im_defs = lib.get_dangling_im_def(top["inter_signal"]["definitions"])
@@ -42,28 +37,34 @@ for m in top['memory']:
 
 %>\
 module top_${top["name"]} #(
+  // Manually defined parameters
+% if not lib.is_rom_ctrl(top["module"]):
+  parameter BootRomInitFile = "",
+% endif
+
   // Auto-inferred parameters
 % for m in top["module"]:
   % if not lib.is_inst(m):
 <% continue %>
   % endif
-  % for p_exp in filter(lambda p: p.get("expose") == "true", m["param_list"]):
-  parameter ${p_exp["type"]} ${p_exp["name_top"]} = ${p_exp["default"]},
+  // parameters for ${m['name']}
+  % for p_exp in [p for p in m["param_list"] if p.get("expose") == "true" ]:
+<%
+    p_type = p_exp.get('type')
+    p_type_word = p_type + ' ' if p_type else ''
+
+    p_lhs = f'{p_type_word}{p_exp["name_top"]}'
+    p_rhs = p_exp['default']
+%>\
+    % if 12 + len(p_lhs) + 3 + len(p_rhs) + 1 < 100:
+  parameter ${p_lhs} = ${p_rhs}${"" if loop.parent.last & loop.last else ","}
+    % else:
+  parameter ${p_lhs} =
+      ${p_rhs}${"" if loop.parent.last & loop.last else ","}
+    % endif
   % endfor
 % endfor
-
-  // Manually defined parameters
-% if has_toplevel_rom:
-  parameter     BootRomInitFile = "",
-% endif
-  parameter ibex_pkg::regfile_e IbexRegFile = ibex_pkg::RegFileFF,
-  parameter bit IbexICache = 1,
-  parameter bit IbexPipeLine = 0,
-  parameter bit SecureIbex = 1
 ) (
-  // Reset, clocks defined as part of intermodule
-  input               rst_ni,
-
 % if num_mio_pads != 0:
   // Multiplexed I/O
   input        ${lib.bitarray(num_mio_pads, max_sigwidth)} mio_in_i,
@@ -87,17 +88,15 @@ module top_${top["name"]} #(
 
   // Inter-module Signal External type
   % for sig in top["inter_signal"]["external"]:
-  ${"input " if sig["direction"] == "in" else "output"} ${lib.im_defname(sig)} ${lib.bitarray(sig["width"],1)} ${sig["signame"]},
+  ${lib.get_direction(sig)} ${lib.im_defname(sig)} ${lib.bitarray(sig["width"],1)} ${sig["signame"]},
   % endfor
 
-  // Flash specific voltages
-  inout [1:0] flash_test_mode_a_io,
-  inout flash_test_voltage_h_io,
-
-  // OTP specific voltages
-  inout otp_ext_voltage_h_io,
-
 % endif
+
+  // All clocks forwarded to ast
+  output clkmgr_pkg::clkmgr_out_t clks_ast_o,
+  output rstmgr_pkg::rstmgr_out_t rsts_ast_o,
+
   input                      scan_rst_ni, // reset used for test mode
   input                      scan_en_i,
   input lc_ctrl_pkg::lc_tx_t scanmode_i   // lc_ctrl_pkg::On for Scan
@@ -171,16 +170,6 @@ module top_${top["name"]} #(
     % endfor
 % endfor
 
-
-<% add_spaces = " " * len(str((interrupt_num-1).bit_length()-1)) %>
-  logic [0:0]${add_spaces}irq_plic;
-  logic [0:0]${add_spaces}msip;
-  logic [${(interrupt_num-1).bit_length()-1}:0] irq_id[1];
-  logic [${(interrupt_num-1).bit_length()-1}:0] unused_irq_id[1];
-
-  // this avoids lint errors
-  assign unused_irq_id = irq_id;
-
   // Alert list
   prim_alert_pkg::alert_tx_t [alert_pkg::NAlerts-1:0]  alert_tx;
   prim_alert_pkg::alert_rx_t [alert_pkg::NAlerts-1:0]  alert_rx;
@@ -243,355 +232,65 @@ module top_${top["name"]} #(
 
 ## Inter-module signal collection
 
-  // Unused reset signals
-% for k, v in unused_resets.items():
-  logic unused_d${v.lower()}_rst_${k};
-% endfor
-% for k, v in unused_resets.items():
-  assign unused_d${v.lower()}_rst_${k} = ${lib.get_reset_path(k, v, top['resets'])};
-% endfor
+% for m in top["module"]:
+  % if m["type"] == "otp_ctrl":
+  // OTP HW_CFG Broadcast signals.
+  // TODO(#6713): The actual struct breakout and mapping currently needs to
+  // be performed by hand.
+  assign csrng_otp_en_csrng_sw_app_read = otp_ctrl_otp_hw_cfg.data.en_csrng_sw_app_read;
+  assign entropy_src_otp_en_entropy_src_fw_read = otp_ctrl_otp_hw_cfg.data.en_entropy_src_fw_read;
+  assign entropy_src_otp_en_entropy_src_fw_over = otp_ctrl_otp_hw_cfg.data.en_entropy_src_fw_over;
+  assign sram_ctrl_main_otp_en_sram_ifetch = otp_ctrl_otp_hw_cfg.data.en_sram_ifetch;
+  assign lc_ctrl_otp_device_id = otp_ctrl_otp_hw_cfg.data.device_id;
+  assign lc_ctrl_otp_manuf_state = otp_ctrl_otp_hw_cfg.data.manuf_state;
+  assign keymgr_otp_device_id = otp_ctrl_otp_hw_cfg.data.device_id;
 
-  // Non-debug module reset == reset for everything except for the debug module
-  logic ndmreset_req;
-
-  // debug request from rv_dm to core
-  logic debug_req;
-
-  // processor core
-  rv_core_ibex #(
-    .PMPEnable                (1),
-    .PMPGranularity           (0), // 2^(PMPGranularity+2) == 4 byte granularity
-    .PMPNumRegions            (16),
-    .MHPMCounterNum           (10),
-    .MHPMCounterWidth         (32),
-    .RV32E                    (0),
-    .RV32M                    (ibex_pkg::RV32MSingleCycle),
-    .RV32B                    (ibex_pkg::RV32BNone),
-    .RegFile                  (IbexRegFile),
-    .BranchTargetALU          (1),
-    .WritebackStage           (1),
-    .ICache                   (IbexICache),
-    .ICacheECC                (1),
-    .BranchPredictor          (0),
-    .DbgTriggerEn             (1),
-    .SecureIbex               (SecureIbex),
-    .DmHaltAddr               (ADDR_SPACE_DEBUG_MEM + dm::HaltAddress[31:0]),
-    .DmExceptionAddr          (ADDR_SPACE_DEBUG_MEM + dm::ExceptionAddress[31:0]),
-    .PipeLine                 (IbexPipeLine)
-  ) u_rv_core_ibex (
-    // clock and reset
-    .clk_i                (${cpu_clk}),
-    .rst_ni               (${cpu_rst}[rstmgr_pkg::Domain0Sel]),
-    .clk_esc_i            (${esc_clk}),
-    .rst_esc_ni           (${esc_rst}[rstmgr_pkg::Domain0Sel]),
-    .ram_cfg_i            (ast_ram_1p_cfg),
-    // static pinning
-    .hart_id_i            (32'b0),
-    .boot_addr_i          (ADDR_SPACE_ROM_CTRL__ROM),
-    // TL-UL buses
-    .tl_i_o               (main_tl_corei_req),
-    .tl_i_i               (main_tl_corei_rsp),
-    .tl_d_o               (main_tl_cored_req),
-    .tl_d_i               (main_tl_cored_rsp),
-    // interrupts
-    .irq_software_i       (msip),
-    .irq_timer_i          (intr_rv_timer_timer_expired_0_0),
-    .irq_external_i       (irq_plic),
-    // escalation input from alert handler (NMI)
-    .esc_tx_i             (alert_handler_esc_tx[0]),
-    .esc_rx_o             (alert_handler_esc_rx[0]),
-    // debug interface
-    .debug_req_i          (debug_req),
-    // crash dump interface
-    .crash_dump_o         (rv_core_ibex_crash_dump),
-    // CPU control signals
-    .lc_cpu_en_i          (lc_ctrl_lc_cpu_en),
-    .pwrmgr_cpu_en_i      (pwrmgr_aon_fetch_en),
-    .core_sleep_o         (pwrmgr_aon_pwr_cpu.core_sleeping),
-
-    // dft bypass
-    .scan_rst_ni,
-    .scanmode_i
-  );
-
-  // Debug Module (RISC-V Debug Spec 0.13)
-  //
-
-  rv_dm #(
-    .NrHarts     (1),
-    .IdcodeValue (JTAG_IDCODE)
-  ) u_dm_top (
-    .clk_i         (${cpu_clk}),
-    .rst_ni        (${dm_rst}[rstmgr_pkg::Domain0Sel]),
-    .hw_debug_en_i (lc_ctrl_lc_hw_debug_en),
-    .scanmode_i,
-    .scan_rst_ni,
-    .ndmreset_o    (ndmreset_req),
-    .dmactive_o    (),
-    .debug_req_o   (debug_req),
-    .unavailable_i (1'b0),
-
-    // bus device with debug memory (for execution-based debug)
-    .tl_d_i        (main_tl_debug_mem_req),
-    .tl_d_o        (main_tl_debug_mem_rsp),
-
-    // bus host (for system bus accesses, SBA)
-    .tl_h_o        (main_tl_dm_sba_req),
-    .tl_h_i        (main_tl_dm_sba_rsp),
-
-    //JTAG
-    .jtag_req_i    (pinmux_aon_rv_jtag_req),
-    .jtag_rsp_o    (pinmux_aon_rv_jtag_rsp)
-  );
-
-  assign rstmgr_aon_cpu.ndmreset_req = ndmreset_req;
-  assign rstmgr_aon_cpu.rst_cpu_n = ${top["reset_paths"]["sys"]}[rstmgr_pkg::Domain0Sel];
-
-## Memory Instantiation
-% for m in top["memory"]:
-<%
-  resets = m['reset_connections']
-  clocks = m['clock_connections']
-%>\
-  % if m["type"] == "ram_1p_scr":
-<%
-     data_width = int(top["datawidth"])
-     full_data_width = data_width + int(m["integ_width"])
-     dw_byte = data_width // 8
-     addr_width = ((int(m["size"], 0) // dw_byte) -1).bit_length()
-     sram_depth = (int(m["size"], 0) // dw_byte)
-     max_char = len(str(max(data_width, addr_width)))
-%>\
-  // sram device
-  logic ${lib.bitarray(1,          max_char)} ${m["name"]}_req;
-  logic ${lib.bitarray(1,          max_char)} ${m["name"]}_gnt;
-  logic ${lib.bitarray(1,          max_char)} ${m["name"]}_we;
-  logic ${lib.bitarray(1,          max_char)} ${m["name"]}_intg_err;
-  logic ${lib.bitarray(addr_width, max_char)} ${m["name"]}_addr;
-  logic ${lib.bitarray(full_data_width, max_char)} ${m["name"]}_wdata;
-  logic ${lib.bitarray(full_data_width, max_char)} ${m["name"]}_wmask;
-  logic ${lib.bitarray(full_data_width, max_char)} ${m["name"]}_rdata;
-  logic ${lib.bitarray(1,          max_char)} ${m["name"]}_rvalid;
-  logic ${lib.bitarray(2,          max_char)} ${m["name"]}_rerror;
-
-  tlul_adapter_sram #(
-    .SramAw(${addr_width}),
-    .SramDw(${data_width}),
-    .Outstanding(2),
-    .CmdIntgCheck(1),
-    .EnableRspIntgGen(1),
-    .EnableDataIntgGen(0),
-    .EnableDataIntgPt(1)
-  ) u_tl_adapter_${m["name"]} (
-    % for key in clocks:
-    .${key}   (${clocks[key]}),
-    % endfor
-    % for key, value in resets.items():
-    .${key}   (${value}),
-    % endfor
-    .tl_i        (${m["name"]}_tl_req),
-    .tl_o        (${m["name"]}_tl_rsp),
-    .en_ifetch_i (${m["inter_signal_list"][3]["top_signame"]}),
-    .req_o       (${m["name"]}_req),
-    .req_type_o  (),
-    .gnt_i       (${m["name"]}_gnt),
-    .we_o        (${m["name"]}_we),
-    .addr_o      (${m["name"]}_addr),
-    .wdata_o     (${m["name"]}_wdata),
-    .wmask_o     (${m["name"]}_wmask),
-    .intg_error_o(${m["name"]}_intg_err),
-    .rdata_i     (${m["name"]}_rdata),
-    .rvalid_i    (${m["name"]}_rvalid),
-    .rerror_i    (${m["name"]}_rerror)
-  );
-
-<%
-mem_name = m["name"].split("_")
-mem_name = lib.Name(mem_name[1:])
-%>\
-  prim_ram_1p_scr #(
-    .Width(${full_data_width}),
-    .Depth(${sram_depth}),
-    .EnableParity(0),
-    .LfsrWidth(${data_width}),
-    .StatePerm(RndCnstSramCtrl${mem_name.as_camel_case()}SramLfsrPerm),
-    .DataBitsPerMask(1), // TODO: Temporary change to ensure byte updates can still be done
-    .DiffWidth(8)
-  ) u_ram1p_${m["name"]} (
-    % for key in clocks:
-    .${key}   (${clocks[key]}),
-    % endfor
-    % for key, value in resets.items():
-    .${key}   (${value}),
-    % endfor
-
-    .key_valid_i (${m["inter_signal_list"][1]["top_signame"]}_req.valid),
-    .key_i       (${m["inter_signal_list"][1]["top_signame"]}_req.key),
-    .nonce_i     (${m["inter_signal_list"][1]["top_signame"]}_req.nonce),
-    .init_req_i  (${m["inter_signal_list"][2]["top_signame"]}_req.req),
-    .init_seed_i (${m["inter_signal_list"][2]["top_signame"]}_req.seed),
-    .init_ack_o  (${m["inter_signal_list"][2]["top_signame"]}_rsp.ack),
-
-    .req_i       (${m["name"]}_req),
-    .intg_error_i(${m["name"]}_intg_err),
-    .gnt_o       (${m["name"]}_gnt),
-    .write_i     (${m["name"]}_we),
-    .addr_i      (${m["name"]}_addr),
-    .wdata_i     (${m["name"]}_wdata),
-    .wmask_i     (${m["name"]}_wmask),
-    .rdata_o     (${m["name"]}_rdata),
-    .rvalid_o    (${m["name"]}_rvalid),
-    .rerror_o    (${m["name"]}_rerror),
-    .raddr_o     (${m["inter_signal_list"][1]["top_signame"]}_rsp.raddr),
-    .intg_error_o(${m["inter_signal_list"][4]["top_signame"]}),
-    .cfg_i       (ram_1p_cfg_i)
-  );
-
-  assign ${m["inter_signal_list"][1]["top_signame"]}_rsp.rerror = ${m["name"]}_rerror;
-
-  % elif m["type"] == "rom":
-<%
-     data_width = int(top["datawidth"])
-     full_data_width = data_width + int(m['integ_width'])
-     dw_byte = data_width // 8
-     addr_width = ((int(m["size"], 0) // dw_byte) -1).bit_length()
-     rom_depth = (int(m["size"], 0) // dw_byte)
-     max_char = len(str(max(data_width, addr_width)))
-%>\
-  // ROM device
-  logic ${lib.bitarray(1,          max_char)} ${m["name"]}_req;
-  logic ${lib.bitarray(addr_width, max_char)} ${m["name"]}_addr;
-  logic ${lib.bitarray(full_data_width, max_char)} ${m["name"]}_rdata;
-  logic ${lib.bitarray(1,          max_char)} ${m["name"]}_rvalid;
-
-  tlul_adapter_sram #(
-    .SramAw(${addr_width}),
-    .SramDw(${data_width}),
-    .Outstanding(2),
-    .ErrOnWrite(1),
-    .CmdIntgCheck(1),
-    .EnableRspIntgGen(1),
-    .EnableDataIntgGen(1) // TODO: Needs to be updated for intgerity passthrough
-  ) u_tl_adapter_${m["name"]} (
-    % for key in clocks:
-    .${key}   (${clocks[key]}),
-    % endfor
-    % for key, value in resets.items():
-    .${key}   (${value}),
-    % endfor
-
-    .tl_i        (${m["name"]}_tl_req),
-    .tl_o        (${m["name"]}_tl_rsp),
-    .en_ifetch_i (tlul_pkg::InstrEn),
-    .req_o       (${m["name"]}_req),
-    .req_type_o  (),
-    .gnt_i       (1'b1), // Always grant as only one requester exists
-    .we_o        (),
-    .addr_o      (${m["name"]}_addr),
-    .wdata_o     (),
-    .wmask_o     (),
-    .intg_error_o(), // Connect to ROM checker and ROM scramble later
-    .rdata_i     (${m["name"]}_rdata[${data_width-1}:0]),
-    .rvalid_i    (${m["name"]}_rvalid),
-    .rerror_i    (2'b00)
-  );
-
-  prim_rom_adv #(
-    .Width(${full_data_width}),
-    .Depth(${rom_depth}),
-    .MemInitFile(BootRomInitFile)
-  ) u_rom_${m["name"]} (
-    % for key in clocks:
-    .${key}   (${clocks[key]}),
-    % endfor
-    % for key, value in resets.items():
-    .${key}   (${value}),
-    % endfor
-    .req_i    (${m["name"]}_req),
-    .addr_i   (${m["name"]}_addr),
-    .rdata_o  (${m["name"]}_rdata),
-    .rvalid_o (${m["name"]}_rvalid),
-    .cfg_i    (rom_cfg_i)
-  );
-
-  % elif m["type"] == "eflash":
-
-  // host to flash communication
-  logic flash_host_req;
-  tlul_pkg::tl_type_e flash_host_req_type;
-  logic flash_host_req_rdy;
-  logic flash_host_req_done;
-  logic flash_host_rderr;
-  logic [flash_ctrl_pkg::BusWidth-1:0] flash_host_rdata;
-  logic [flash_ctrl_pkg::BusAddrW-1:0] flash_host_addr;
-  logic flash_host_intg_err;
-
-  tlul_adapter_sram #(
-    .SramAw(flash_ctrl_pkg::BusAddrW),
-    .SramDw(flash_ctrl_pkg::BusWidth),
-    .Outstanding(2),
-    .ByteAccess(0),
-    .ErrOnWrite(1),
-    .CmdIntgCheck(1),
-    .EnableRspIntgGen(1),
-    .EnableDataIntgGen(1)
-  ) u_tl_adapter_${m["name"]} (
-    % for key in clocks:
-    .${key}   (${clocks[key]}),
-    % endfor
-    % for key, value in resets.items():
-    .${key}   (${value}),
-    % endfor
-
-    .tl_i        (${m["name"]}_tl_req),
-    .tl_o        (${m["name"]}_tl_rsp),
-    .en_ifetch_i (tlul_pkg::InstrEn), // tie this to secure boot somehow
-    .req_o       (flash_host_req),
-    .req_type_o  (flash_host_req_type),
-    .gnt_i       (flash_host_req_rdy),
-    .we_o        (),
-    .addr_o      (flash_host_addr),
-    .wdata_o     (),
-    .wmask_o     (),
-    .intg_error_o(flash_host_intg_err),
-    .rdata_i     (flash_host_rdata),
-    .rvalid_i    (flash_host_req_done),
-    .rerror_i    ({flash_host_rderr,1'b0})
-  );
-
-  flash_phy u_flash_${m["name"]} (
-    % for key in clocks:
-    .${key}   (${clocks[key]}),
-    % endfor
-    % for key, value in resets.items():
-    .${key}   (${value}),
-    % endfor
-    .host_req_i        (flash_host_req),
-    .host_intg_err_i   (flash_host_intg_err),
-    .host_req_type_i   (flash_host_req_type),
-    .host_addr_i       (flash_host_addr),
-    .host_req_rdy_o    (flash_host_req_rdy),
-    .host_req_done_o   (flash_host_req_done),
-    .host_rderr_o      (flash_host_rderr),
-    .host_rdata_o      (flash_host_rdata),
-    .flash_ctrl_i      (${m["inter_signal_list"][0]["top_signame"]}_req),
-    .flash_ctrl_o      (${m["inter_signal_list"][0]["top_signame"]}_rsp),
-    .lc_nvm_debug_en_i (${m["inter_signal_list"][2]["top_signame"]}),
-    .flash_bist_enable_i,
-    .flash_power_down_h_i,
-    .flash_power_ready_h_i,
-    .flash_test_mode_a_io,
-    .flash_test_voltage_h_io,
-    .flash_alert_o,
-    .scanmode_i,
-    .scan_en_i,
-    .scan_rst_ni
-  );
-
-  % else:
-    // flash memory is embedded within controller
+  logic unused_otp_hw_cfg_bits;
+  assign unused_otp_hw_cfg_bits = ^{
+    otp_ctrl_otp_hw_cfg.valid,
+    otp_ctrl_otp_hw_cfg.data.hw_cfg_digest,
+    otp_ctrl_otp_hw_cfg.data.unallocated
+  };
   % endif
 % endfor
+
+  // See #7978 This below is a hack.
+  // This is because ast is a comportable-like module that sits outside
+  // of top_earlgrey's boundary.
+  assign clks_ast_o = ${top['clocks'].hier_paths['top'][:-1]};
+  assign rsts_ast_o = ${top['resets'].hier_paths['top'][:-1]};
+
+  // ibex specific assignments
+  // TODO: This should be further automated in the future.
+  assign rv_core_ibex_irq_timer = intr_rv_timer_timer_expired_0_0;
+  assign rv_core_ibex_hart_id = '0;
+
+  ## Not all top levels have a rom controller.
+  ## For those that do not, reference the ROM directly.
+% if lib.is_rom_ctrl(top["module"]):
+  assign rv_core_ibex_boot_addr = ADDR_SPACE_ROM_CTRL__ROM;
+% else:
+  assign rv_core_ibex_boot_addr = ADDR_SPACE_ROM;
+% endif
+
+  ## Not all top levels have a lifecycle controller.
+  ## For those that do not, always enable ibex.
+% if not lib.is_lc_ctrl(top["module"]):
+  assign rv_core_ibex_lc_cpu_en = lc_ctrl_pkg::On;
+% endif
+
+  // Struct breakout module tool-inserted DFT TAP signals
+  pinmux_jtag_breakout u_dft_tap_breakout (
+    .req_i    (pinmux_aon_dft_jtag_req),
+    .rsp_o    (pinmux_aon_dft_jtag_rsp),
+    .tck_o    (),
+    .trst_no  (),
+    .tms_o    (),
+    .tdi_o    (),
+    .tdo_i    (1'b0),
+    .tdo_oe_i (1'b0)
+  );
+
 ## Peripheral Instantiation
 
 <% alert_idx = 0 %>
@@ -662,6 +361,8 @@ slice = str(alert_idx+w-1) + ":" + str(alert_idx)
         % if sig['type'] == "req_rsp":
       .${lib.im_portname(sig,"req")}(${lib.im_netname(sig, "req")}),
       .${lib.im_portname(sig,"rsp")}(${lib.im_netname(sig, "rsp")}),
+        % elif sig['type'] == "io":
+      .${lib.im_portname(sig,"io")}(${lib.im_netname(sig, "io")}),
         % elif sig['type'] == "uni":
           ## TODO: Broadcast type
           ## TODO: default for logic type
@@ -670,11 +371,7 @@ slice = str(alert_idx+w-1) + ":" + str(alert_idx)
       % endfor
     % endif
     % if m["type"] == "rv_plic":
-
       .intr_src_i (intr_vector),
-      .irq_o      (irq_plic),
-      .irq_id_o   (irq_id),
-      .msip_o     (msip),
     % endif
     % if m["type"] == "pinmux":
 
@@ -702,9 +399,6 @@ slice = str(alert_idx+w-1) + ":" + str(alert_idx)
       .alert_rx_o  ( alert_rx ),
       .alert_tx_i  ( alert_tx ),
     % endif
-    % if m["type"] == "otp_ctrl":
-      .otp_ext_voltage_h_io,
-    % endif
     % if block.scan:
       .scanmode_i,
     % endif
@@ -719,8 +413,11 @@ slice = str(alert_idx+w-1) + ":" + str(alert_idx)
     % for k, v in m["clock_connections"].items():
       .${k} (${v}),
     % endfor
-    % for k, v in m["reset_connections"].items():
-      .${k} (${v})${"," if not loop.last else ""}
+    % for port, reset in m["reset_connections"].items():
+      % if lib.is_shadowed_port(block, port):
+      .${lib.shadow_name(port)} (${lib.get_reset_path(top, reset, True)}),
+      % endif:
+      .${port} (${lib.get_reset_path(top, reset)})${"," if not loop.last else ""}
     % endfor
   );
 
@@ -744,8 +441,8 @@ slice = str(alert_idx+w-1) + ":" + str(alert_idx)
   % for k, v in xbar["clock_connections"].items():
     .${k} (${v}),
   % endfor
-  % for k, v in xbar["reset_connections"].items():
-    .${k} (${v}),
+  % for port, reset in xbar["reset_connections"].items():
+    .${port} (${lib.get_reset_path(top, reset)}),
   % endfor
 
   ## Inter-module signal

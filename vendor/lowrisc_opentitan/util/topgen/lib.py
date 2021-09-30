@@ -11,13 +11,13 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import hjson
-
 from reggen.ip_block import IpBlock
 
 # Ignore flake8 warning as the function is used in the template
 # disable isort formating, as conflicting with flake8
 from .intermodule import find_otherside_modules  # noqa : F401 # isort:skip
-from .intermodule import im_portname, im_defname, im_netname  # noqa : F401 # isort:skip
+from .intermodule import im_portname, im_defname, im_netname # noqa : F401 # isort:skip
+from .intermodule import get_direction # noqa : F401 # isort:skip
 from .intermodule import get_dangling_im_def # noqa : F401 # isort:skip
 
 
@@ -290,48 +290,35 @@ def get_clk_name(clk):
         return "clk_{}_i".format(clk)
 
 
-def get_reset_path(reset, domain, reset_cfg):
+def is_shadowed_port(block: IpBlock, port: str) -> bool:
+    """Return boolean indication whether a port is a shadow reset port
+    """
+    shadowed_port = block.clocking.primary.reset if block.has_shadowed_reg() \
+        else None
+
+    return port == shadowed_port
+
+
+def shadow_name(name: str) -> str:
+    """Return the appropriate shadow reset name based on port name
+    """
+    match = re.match(r'^rst_([A-Za-z0-9_]+)_ni?', name)
+    if match:
+        return f'rst_{match.group(1)}_shadowed_ni'
+    else:
+        return 'rst_shadowed_ni'
+
+
+def get_reset_path(top: object, reset: str, shadow_sel = False):
     """Return the appropriate reset path given name
     """
-    # find matching node for reset
-    node_match = [node for node in reset_cfg['nodes'] if node['name'] == reset]
-    assert len(node_match) == 1
-    reset_type = node_match[0]['type']
-
-    # find matching path
-    hier_path = ""
-    if reset_type == "int":
-        log.debug("{} used as internal reset".format(reset["name"]))
-    else:
-        hier_path = reset_cfg['hier_paths'][reset_type]
-
-    # find domain selection
-    domain_sel = ''
-    if reset_type not in ["ext", "int"]:
-        domain_sel = "[rstmgr_pkg::Domain{}Sel]".format(domain)
-
-    reset_path = ""
-    if reset_type == "ext":
-        reset_path = reset
-    else:
-        reset_path = "{}rst_{}_n{}".format(hier_path, reset, domain_sel)
-
-    return reset_path
+    return top['resets'].get_path(reset['name'], reset['domain'], shadow_sel)
 
 
 def get_unused_resets(top):
     """Return dict of unused resets and associated domain
     """
-    unused_resets = OrderedDict()
-    unused_resets = {
-        reset['name']: domain
-        for reset in top['resets']['nodes']
-        for domain in top['power']['domains']
-        if reset['type'] == 'top' and domain not in reset['domains']
-    }
-
-    log.debug("Unused resets are {}".format(unused_resets))
-    return unused_resets
+    return top['resets'].get_unused_resets(top['power']['domains'])
 
 
 def is_templated(module):
@@ -401,15 +388,30 @@ def get_base_and_size(name_to_block: Dict[str, IpBlock],
         # that corresponds to ifname
         rb = block.reg_blocks.get(ifname)
         if rb is None:
-            log.error('Cannot connect to non-existent {} device interface '
-                      'on {!r} (an instance of the {!r} block)'
-                      .format('default' if ifname is None else repr(ifname),
-                              inst['name'], block.name))
-            bytes_used = 0
+            raise RuntimeError(
+                'Cannot connect to non-existent {} device interface '
+                'on {!r} (an instance of the {!r} block).'
+                .format('default' if ifname is None else repr(ifname),
+                        inst['name'], block.name))
         else:
             bytes_used = 1 << rb.get_addr_width()
 
         base_addr = inst['base_addrs'][ifname]
+
+        # If an instance has a nonempty "memory" field, take the memory
+        # size configuration from there.
+        if "memory" in inst:
+            if ifname in inst["memory"]:
+                memory_size = int(inst["memory"][ifname]["size"], 0)
+                if bytes_used > memory_size:
+                    raise RuntimeError(
+                        'Memory region on {} device interface '
+                        'on {!r} (an instance of the {!r} block) '
+                        'is smaller than the corresponding register block.'
+                        .format('default' if ifname is None else repr(ifname),
+                                inst['name'], block.name))
+
+                bytes_used = memory_size
 
     # Round up to min_device_spacing if necessary
     size_byte = max(bytes_used, min_device_spacing)
@@ -495,3 +497,24 @@ def make_bit_concatenation(sig_name: str,
         acc += [',', item_indent, item]
     acc += ['\n', ' ' * end_indent, '}']
     return ''.join(acc)
+
+
+def is_rom_ctrl(modules):
+    '''Return true if rom_ctrl (and thus boot-up rom integrity checking)
+       exists in the design
+    '''
+    for m in modules:
+        if m['type'] == 'rom_ctrl':
+            return True
+
+    return False
+
+
+def is_lc_ctrl(modules):
+    '''Return true if lc_ctrl exists in the design
+    '''
+    for m in modules:
+        if m['type'] == 'lc_ctrl':
+            return True
+
+    return False

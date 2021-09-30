@@ -9,6 +9,8 @@ from typing import Callable, Dict, List, Optional, Sequence, Union
 
 from .alert import Alert
 from .access import SWAccess, HWAccess
+from .bus_interfaces import BusInterfaces
+from .clocking import Clocking, ClockingItem
 from .field import Field
 from .signal import Signal
 from .lib import check_int, check_list, check_str_dict, check_str
@@ -25,6 +27,8 @@ class RegBlock:
         self._reg_width = reg_width
         self._params = params
 
+        self.name = ""  # type: str
+        self.clocks = {}  # type: Dict[str, ClockingItem]
         self.offset = 0
         self.multiregs = []  # type: List[MultiRegister]
         self.registers = []  # type: List[Register]
@@ -39,6 +43,11 @@ class RegBlock:
         # A list of registers and multiregisters (unexpanded)
         self.all_regs = []  # type: List[Union[Register, MultiRegister]]
 
+        # A list of all the underlying register types used in the block. This
+        # has one entry for each actual Register, plus a single entry giving
+        # the underlying register for each MultiRegister.
+        self.type_regs = []  # type: List[Register]
+
         # A list with everything in order
         self.entries = []  # type: List[object]
 
@@ -52,9 +61,14 @@ class RegBlock:
         # A list of all write enable names
         self.wennames = []  # type: List[str]
 
+        # Boolean indication that the block is fully asynchronous
+        self.async_if = False
+
     @staticmethod
     def build_blocks(block: 'RegBlock',
-                     raw: object) -> Dict[Optional[str], 'RegBlock']:
+                     raw: object,
+                     bus: BusInterfaces,
+                     clocks: Clocking) -> Dict[Optional[str], 'RegBlock']:
         '''Build a dictionary of blocks for a 'registers' field in the hjson
 
         There are two different syntaxes we might see here. The simple syntax
@@ -71,7 +85,10 @@ class RegBlock:
         '''
         if isinstance(raw, list):
             # This is the simple syntax
-            block.add_raw_registers(raw, 'registers field at top-level')
+            block.add_raw_registers(raw,
+                                    'registers field at top-level',
+                                    clocks,
+                                    bus.device_async.get(None))
             return {None: block}
 
         # This is the more complicated syntax
@@ -96,22 +113,38 @@ class RegBlock:
             block.add_raw_registers(rb_val,
                                     'item {} of the registers '
                                     'dictionary at top-level'
-                                    .format(idx + 1))
+                                    .format(idx + 1),
+                                    clocks,
+                                    bus.device_async.get(r_key))
             block.validate()
 
             assert rb_key not in ret
+            block.name = rb_key
             ret[rb_key] = block
 
         return ret
 
-    def add_raw_registers(self, raw: object, what: str) -> None:
+    def add_raw_registers(self,
+                          raw: object,
+                          what: str,
+                          clocks: Clocking,
+                          async_if: Optional[str]) -> None:
+
+        # the interface is fully asynchronous
+        if async_if:
+            self.async_if = True
+            self.clocks[async_if] = clocks.get_by_clock(async_if)
+
         rl = check_list(raw, 'registers field at top-level')
         for entry_idx, entry_raw in enumerate(rl):
             where = ('entry {} of the top-level registers field'
                      .format(entry_idx + 1))
-            self.add_raw(where, entry_raw)
+            self.add_raw(where, entry_raw, clocks)
 
-    def add_raw(self, where: str, raw: object) -> None:
+    def add_raw(self,
+                where: str,
+                raw: object,
+                clocks: Clocking) -> None:
         entry = check_str_dict(raw, where)
 
         handlers = {
@@ -146,14 +179,49 @@ class RegBlock:
         entry_where = ('At offset {:#x}, {}, type {!r}'
                        .format(self.offset, where, entry_type))
 
-        handlers[entry_type](entry_where, entry_body)
+        handlers[entry_type](entry_where, entry_body, clocks)
 
-    def _handle_register(self, where: str, body: object) -> None:
+    def _validate_async(self, name: Optional[str], clk: object) -> None:
+        '''Check for async definition consistency
+
+        If a reg block is marked fully asynchronous through its bus interface,
+        its register definition cannot also mark individual registers with
+        asynchronous designations.
+
+        The two asynchronous regfile schemes are mutually exclusive.
+        '''
+
+        if self.name:
+            block_name = self.name
+        else:
+            block_name = "Default"
+
+        if self.async_if and name:
+            raise ValueError(f'''
+            {block_name} register block has incompatible async definitions.
+            The corresponding device interface is marked fully async, however
+            there are individual registers that also contain the async_clk
+            designation, this is not allowed.
+
+            Either remove all register async_clk designations, or remove
+            async designation of the bus interface.
+            ''')
+
+        # If there is an asynchronous clock defined, then the clock must be a
+        # valid clocking item
+        if name:
+            assert isinstance(clk, ClockingItem)
+            self.clocks[name] = clk
+
+    def _handle_register(self, where: str, body: object, clocks: Clocking) -> None:
         reg = Register.from_raw(self._reg_width,
-                                self.offset, self._params, body)
+                                self.offset, self._params, body, clocks)
+
+        self._validate_async(reg.async_name, reg.async_clk)
+
         self.add_register(reg)
 
-    def _handle_reserved(self, where: str, body: object) -> None:
+    def _handle_reserved(self, where: str, body: object, clocks: Optional[Clocking]) -> None:
         nreserved = check_int(body, 'body of ' + where)
         if nreserved <= 0:
             raise ValueError('Reserved count in {} is {}, '
@@ -162,7 +230,7 @@ class RegBlock:
 
         self.offset += self._addrsep * nreserved
 
-    def _handle_skipto(self, where: str, body: object) -> None:
+    def _handle_skipto(self, where: str, body: object, clocks: Optional[Clocking]) -> None:
         skipto = check_int(body, 'body of ' + where)
         if skipto < self.offset:
             raise ValueError('Destination of skipto in {} is {:#x}, '
@@ -174,7 +242,7 @@ class RegBlock:
                              .format(where, skipto, self._addrsep))
         self.offset = skipto
 
-    def _handle_window(self, where: str, body: object) -> None:
+    def _handle_window(self, where: str, body: object, clocks: Optional[Clocking]) -> None:
         window = Window.from_raw(self.offset,
                                  self._reg_width, self._params, body)
         if window.name is not None:
@@ -186,9 +254,14 @@ class RegBlock:
                                          self.name_to_offset[lname]))
         self.add_window(window)
 
-    def _handle_multireg(self, where: str, body: object) -> None:
+    def _handle_multireg(self, where: str, body: object, clocks: Clocking) -> None:
         mr = MultiRegister(self.offset,
-                           self._addrsep, self._reg_width, self._params, body)
+                           self._addrsep, self._reg_width, self._params, body,
+                           clocks)
+
+        # validate async schemes
+        self._validate_async(mr.async_name, mr.async_clk)
+
         for reg in mr.regs:
             lname = reg.name.lower()
             if lname in self.name_to_offset:
@@ -200,10 +273,14 @@ class RegBlock:
                                          reg.name, reg.offset,
                                          self.name_to_offset[lname]))
             self._add_flat_reg(reg)
+            if mr.dv_compact is False:
+                self.type_regs.append(reg)
             self.name_to_offset[lname] = reg.offset
 
         self.multiregs.append(mr)
         self.all_regs.append(mr)
+        if mr.dv_compact is True:
+            self.type_regs.append(mr.reg)
         self.entries.append(mr)
         self.offset = mr.next_offset(self._addrsep)
 
@@ -221,6 +298,7 @@ class RegBlock:
 
         self.registers.append(reg)
         self.all_regs.append(reg)
+        self.type_regs.append(reg)
         self.entries.append(reg)
         self.offset = reg.next_offset(self._addrsep)
 
@@ -267,30 +345,7 @@ class RegBlock:
                                  'write-enable, but there is no such register.'
                                  .format(wenname))
 
-            # If the REGWEN bit is SW controlled, check that the register
-            # defaults to enabled. If this bit is read-only by SW and hence
-            # hardware controlled, we do not enforce this requirement.
-            if wen_reg.swaccess.key != "ro" and not wen_reg.resval:
-                raise ValueError('One or more registers use {} as a '
-                                 'write-enable. Since it is SW-controlled '
-                                 'it should have a nonzero reset value.'
-                                 .format(wenname))
-
-            if wen_reg.swaccess.key == "rw0c":
-                # The register is software managed: all good!
-                continue
-
-            if wen_reg.swaccess.key == "ro" and wen_reg.hwaccess.key == "hwo":
-                # The register is hardware managed: that's fine too.
-                continue
-
-            raise ValueError('One or more registers use {} as a write-enable. '
-                             'However, it has invalid access permissions '
-                             '({} / {}). It should either have swaccess=RW0C '
-                             'or have swaccess=RO and hwaccess=HWO.'
-                             .format(wenname,
-                                     wen_reg.swaccess.key,
-                                     wen_reg.hwaccess.key))
+            wen_reg.check_valid_regwen()
 
     def get_n_bits(self, bittype: List[str] = ["q"]) -> int:
         '''Returns number of bits in registers in this block.
@@ -350,8 +405,6 @@ class RegBlock:
                                 tags=[],
                                 swaccess=swaccess_obj,
                                 hwaccess=hwaccess_obj,
-                                hwqe=is_testreg,
-                                hwre=False,
                                 bits=signal.bits,
                                 resval=0,
                                 enum=None))
@@ -359,8 +412,8 @@ class RegBlock:
         reg = Register(self.offset,
                        reg_name,
                        reg_desc,
-                       swaccess_obj,
-                       hwaccess_obj,
+                       async_name="",
+                       async_clk=None,
                        hwext=is_testreg,
                        hwqe=is_testreg,
                        hwre=False,
@@ -384,9 +437,16 @@ class RegBlock:
                                  'rw1c',
                                  'hrw',
                                  False,
-                                 # intr_state csr is affected by writes to
-                                 # other csrs - skip write-check
-                                 ["excl:CsrNonInitTests:CsrExclWriteCheck"])
+                                 # Some POR routines have the potential to
+                                 # unpredictably set some `intr_state` fields
+                                 # for various IPs, so we exclude all
+                                 # `intr_state` accesses from CSR checks to
+                                 # prevent this from occurring.
+                                 #
+                                 # An example of an `intr_state` mismatch error
+                                 # occurring due to a POR routine can be seen in
+                                 # issue #6888.
+                                 ["excl:CsrAllTests:CsrExclAll"])
         self._add_intr_alert_reg(interrupts,
                                  'INTR_ENABLE',
                                  'Interrupt Enable Register',
@@ -429,3 +489,21 @@ class RegBlock:
     def get_addr_width(self) -> int:
         '''Calculate the number of bits to address every byte of the block'''
         return (self.offset - 1).bit_length()
+
+    def has_shadowed_reg(self) -> bool:
+        '''Return boolean indication whether reg block contains shadowed reigsters'''
+        for r in self.flat_regs:
+            if r.shadowed:
+                return True
+
+        return False
+
+    def has_internal_shadowed_reg(self) -> bool:
+        '''Return boolean indication whether reg block contains shadowed reigsters in
+           internal registers
+        '''
+        for r in self.flat_regs:
+            if r.shadowed and not r.hwext:
+                return True
+
+        return False

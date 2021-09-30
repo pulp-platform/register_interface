@@ -51,14 +51,14 @@ ${hdr}
       ## field.
 <%
       field = r.get_field_list()[0]
-      field_q_width = field.get_n_bits(r0.hwext, ['q'])
+      field_q_width = field.get_n_bits(r0.hwext, r0.hwqe, r0.hwre, ['q'])
       field_q_bits = lib.bitarray(field_q_width, 2)
 %>\
     logic ${field_q_bits} q;
-      % if field.hwqe:
+      % if r0.hwqe:
     logic        qe;
       % endif
-      % if field.hwre or (r0.shadowed and r0.hwext):
+      % if r0.hwre or (r0.shadowed and r0.hwext):
     logic        re;
       % endif
       % if r0.shadowed and not r0.hwext:
@@ -70,19 +70,20 @@ ${hdr}
       ## field. Generate a reg2hw typedef that packs together all the fields of
       ## the register.
       % for f in r0.fields:
-        % if f.get_n_bits(r0.hwext, ["q"]) >= 1:
 <%
-          field_q_width = f.get_n_bits(r0.hwext, ['q'])
-          field_q_bits = lib.bitarray(field_q_width, 2)
-
-          struct_name = f.name.lower()
+          field_q_width = f.get_n_bits(r0.hwext, r0.hwqe, r0.hwre, ["q"])
+%>\
+        % if field_q_width:
+<%
+            field_q_bits = lib.bitarray(field_q_width, 2)
+            struct_name = f.name.lower()
 %>\
     struct packed {
       logic ${field_q_bits} q;
-          % if f.hwqe:
+          % if r0.hwqe:
       logic        qe;
           % endif
-          % if f.hwre or (r0.shadowed and r0.hwext):
+          % if r0.hwre or (r0.shadowed and r0.hwext):
       logic        re;
           % endif
           % if r0.shadowed and not r0.hwext:
@@ -114,7 +115,7 @@ ${hdr}
       ## field.
 <%
       field = r.get_field_list()[0]
-      field_d_width = field.get_n_bits(r0.hwext, ['d'])
+      field_d_width = field.get_n_bits(r0.hwext, r0.hwqe, r0.hwre, ['d'])
       field_d_bits = lib.bitarray(field_d_width, 2)
 %>\
     logic ${field_d_bits} d;
@@ -126,12 +127,13 @@ ${hdr}
       ## field. Generate a hw2reg typedef that packs together all the fields of
       ## the register.
       % for f in r0.fields:
-        % if f.get_n_bits(r0.hwext, ["d"]) >= 1:
 <%
-          field_d_width = f.get_n_bits(r0.hwext, ['d'])
-          field_d_bits = lib.bitarray(field_d_width, 2)
-
-          struct_name = f.name.lower()
+          field_d_width = f.get_n_bits(r0.hwext, r0.hwqe, r0.hwre, ["d"])
+%>\
+        % if field_d_width:
+<%
+            field_d_bits = lib.bitarray(field_d_width, 2)
+            struct_name = f.name.lower()
 %>\
     struct packed {
       logic ${field_d_bits} d;
@@ -145,16 +147,47 @@ ${hdr}
   } ${gen_rtl.get_reg_tx_type(block, r, True)};
   % endif
 % endfor
+% if block.expose_reg_if:
+<%
+    lpfx = gen_rtl.get_type_name_pfx(block, iface_name)
+    addr_width = rb.get_addr_width()
+    data_width = block.regwidth
+    data_byte_width = data_width // 8
+
+    # This will produce strings like "[0:0] " to let us keep
+    # everything lined up whether there's 1 or 2 digits in the MSB.
+    aw_bits = f'[{addr_width-1}:0]'.ljust(6)
+    dw_bits = f'[{data_width-1}:0]'.ljust(6)
+    dbw_bits = f'[{data_byte_width-1}:0]'.ljust(6)
+%>\
+
+  typedef struct packed {
+    logic        reg_we;
+    logic        reg_re;
+    logic ${aw_bits} reg_addr;
+    logic ${dw_bits} reg_wdata;
+    logic ${dbw_bits} reg_be;
+  } ${lpfx}_reg2hw_reg_if_t;
+% endif
 </%def>\
 <%def name="reg2hw_for_iface(iface_name, iface_desc, for_iface, rb)">\
 <%
+lpfx = gen_rtl.get_type_name_pfx(block, iface_name)
 nbits = rb.get_n_bits(["q", "qe", "re"])
 packbit = 0
+
+addr_width = rb.get_addr_width()
+data_width = block.regwidth
+data_byte_width = data_width // 8
+reg_if_width = 2 + addr_width + data_width + data_byte_width
 %>\
 % if nbits > 0:
 
   // Register -> HW type${for_iface}
   typedef struct packed {
+% if block.expose_reg_if:
+    ${lpfx}_reg2hw_reg_if_t reg_if; // [${reg_if_width + nbits - 1}:${nbits}]
+% endif
 % for r in rb.all_regs:
   % if r.get_n_bits(["q"]):
 <%
@@ -169,8 +202,14 @@ packbit = 0
     msb = nbits - packbit - 1
     lsb = msb - struct_width + 1
     packbit += struct_width
+    name_and_comment = f'{r0.name.lower()}; // [{msb}:{lsb}]'
 %>\
-    ${struct_type} ${r0.name.lower()}; // [${msb}:${lsb}]
+  % if 4 + len(struct_type) + 1 + len(name_and_comment) <= 100:
+    ${struct_type} ${name_and_comment}
+  % else:
+    ${struct_type}
+        ${name_and_comment}
+  % endif
   % endif
 % endfor
   } ${gen_rtl.get_iface_tx_type(block, iface_name, False)};
@@ -199,8 +238,14 @@ packbit = 0
     msb = nbits - packbit - 1
     lsb = msb - struct_width + 1
     packbit += struct_width
+    name_and_comment = f'{r0.name.lower()}; // [{msb}:{lsb}]'
 %>\
-    ${struct_type} ${r0.name.lower()}; // [${msb}:${lsb}]
+  % if 4 + len(struct_type) + 1 + len(name_and_comment) <= 100:
+    ${struct_type} ${name_and_comment}
+  % else:
+    ${struct_type}
+        ${name_and_comment}
+  % endif
   % endif
 % endfor
   } ${gen_rtl.get_iface_tx_type(block, iface_name, True)};

@@ -5,6 +5,7 @@
 from typing import Dict, List
 
 from reggen import register
+from .clocking import Clocking
 from .field import Field
 from .lib import check_keys, check_str, check_name, check_bool
 from .params import ReggenParams
@@ -38,7 +39,13 @@ OPTIONAL_FIELDS.update({
     'compact': [
         'pb', "If true, allow multireg compacting."
         "If false, do not compact."
-    ]
+    ],
+    'cdc': [
+        's',
+        "indicates the register must cross to a different "
+        "clock domain before use.  The value shown here "
+        "should correspond to one of the module's clocks."
+    ],
 })
 
 
@@ -48,7 +55,8 @@ class MultiRegister(RegBase):
                  addrsep: int,
                  reg_width: int,
                  params: ReggenParams,
-                 raw: object):
+                 raw: object,
+                 clocks: Clocking):
         super().__init__(offset)
 
         rd = check_keys(raw, 'multireg',
@@ -64,23 +72,34 @@ class MultiRegister(RegBase):
         reg_rd = {key: value
                   for key, value in rd.items()
                   if key in reg_allowed_keys}
-        self.reg = Register.from_raw(reg_width, offset, params, reg_rd)
+        self.reg = Register.from_raw(reg_width, offset, params, reg_rd, clocks)
+
+        # The entire multi-reg block is always on the same clock
+        # This is guaranteed by design
+        self.async_name = self.reg.async_name
+        self.async_clk = self.reg.async_clk
 
         self.cname = check_name(rd['cname'],
                                 'cname field of multireg {}'
                                 .format(self.reg.name))
+        self.name = self.reg.name
 
         self.regwen_multi = check_bool(rd.get('regwen_multi', False),
                                        'regwen_multi field of multireg {}'
                                        .format(self.reg.name))
 
-        default_compact = True if len(self.reg.fields) == 1 else False
+        default_compact = True if len(self.reg.fields) == 1 and not self.regwen_multi else False
         self.compact = check_bool(rd.get('compact', default_compact),
                                   'compact field of multireg {}'
                                   .format(self.reg.name))
         if self.compact and len(self.reg.fields) > 1:
             raise ValueError('Multireg {} sets the compact flag '
                              'but has multiple fields.'
+                             .format(self.reg.name))
+
+        if self.regwen_multi and self.compact:
+            raise ValueError('Multireg {} sets the compact flag '
+                             'but has regwen_multi set.'
                              .format(self.reg.name))
 
         count_str = check_str(rd['count'],
@@ -116,6 +135,13 @@ class MultiRegister(RegBase):
                                       self.regwen_multi, self.compact,
                                       min_reg_idx, max_reg_idx, self.cname)
             self.regs.append(reg)
+
+        # dv_compact is true if the multireg can be equally divided, and we can
+        # pack them as an array
+        if self.count < regs_per_creg or (self.count % regs_per_creg) == 0:
+            self.dv_compact = True
+        else:
+            self.dv_compact = False
 
     def next_offset(self, addrsep: int) -> int:
         return self.offset + len(self.regs) * addrsep

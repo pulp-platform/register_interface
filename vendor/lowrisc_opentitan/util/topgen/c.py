@@ -4,14 +4,15 @@
 """This contains a class which is used to help generate `top_{name}.h` and
 `top_{name}.h`.
 """
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from typing import Dict, List, Optional, Tuple
 
 from mako.template import Template
-
-from .lib import get_base_and_size, Name
-
 from reggen.ip_block import IpBlock
+
+from .lib import Name, get_base_and_size
+
+C_FILE_EXTENSIONS = (".c", ".h", ".cc", ".inc")
 
 
 class MemoryRegion(object):
@@ -129,6 +130,10 @@ class TopGenC:
 
         '''
         ret = []  # type: List[Tuple[Tuple[str, Optional[str]], MemoryRegion]]
+        # TODO: This method is invoked in templates, as well as in the extended
+        # class TopGenCTest. We could refactor and optimize the implementation
+        # a bit.
+        self.device_regions = defaultdict(dict)
         for inst in self.top['module']:
             block = self._name_to_block[inst['type']]
             for if_name, rb in block.reg_blocks.items():
@@ -142,16 +147,31 @@ class TopGenC:
                                                inst, if_name)
 
                 region = MemoryRegion(name, base, size)
+                self.device_regions[inst['name']].update({if_name: region})
                 ret.append((full_if, region))
 
         return ret
 
     def memories(self):
-        return [(m["name"],
-                 MemoryRegion(self._top_name + Name.from_snake_case(m["name"]),
-                              int(m["base_addr"], 0),
-                              int(m["size"], 0)))
-                for m in self.top["memory"]]
+        ret = []
+        for m in self.top["memory"]:
+            ret.append((m["name"],
+                        MemoryRegion(self._top_name +
+                                     Name.from_snake_case(m["name"]),
+                                     int(m["base_addr"], 0),
+                                     int(m["size"], 0))))
+
+        for inst in self.top['module']:
+            if "memory" in inst:
+                for if_name, val in inst["memory"].items():
+                    base, size = get_base_and_size(self._name_to_block,
+                                                   inst, if_name)
+
+                    name = self._top_name + Name.from_snake_case(val["label"])
+                    region = MemoryRegion(name, base, size)
+                    ret.append((val["label"], region))
+
+        return ret
 
     def _init_plic_targets(self):
         enum = CEnum(self._top_name + Name(["plic", "target"]))
@@ -203,6 +223,8 @@ class TopGenC:
 
         sources.add_last_constant("Final PLIC peripheral")
 
+        # Maintain a list of instance-specific IRQs by instance name.
+        self.device_irqs = defaultdict(list)
         for intr in self.top["interrupt"]:
             # Some interrupts are multiple bits wide. Here we deal with that by
             # adding a bit-index suffix
@@ -214,11 +236,14 @@ class TopGenC:
                                                          intr["name"], i))
                     source_name = source_name_map[intr["module_name"]]
                     plic_mapping.add_entry(irq_id, source_name)
+                    self.device_irqs[intr["module_name"]].append(intr["name"] +
+                                                                 str(i))
             else:
                 name = Name.from_snake_case(intr["name"])
                 irq_id = interrupts.add_constant(name, docstring=intr["name"])
                 source_name = source_name_map[intr["module_name"]]
                 plic_mapping.add_entry(irq_id, source_name)
+                self.device_irqs[intr["module_name"]].append(intr["name"])
 
         interrupts.add_last_constant("The Last Valid Interrupt ID.")
 
@@ -374,16 +399,13 @@ class TopGenC:
 
     # Enumerates the positions of all software controllable resets
     def _init_rstmgr_sw_rsts(self):
-        sw_rsts = [
-            rst for rst in self.top["resets"]["nodes"]
-            if 'sw' in rst and rst['sw'] == 1
-        ]
+        sw_rsts = self.top['resets'].get_sw_resets()
 
         enum = CEnum(self._top_name +
                      Name(["reset", "manager", "sw", "resets"]))
 
         for rst in sw_rsts:
-            enum.add_constant(Name.from_snake_case(rst["name"]))
+            enum.add_constant(Name.from_snake_case(rst))
 
         enum.add_last_constant("Last valid rstmgr software reset request")
 
@@ -413,31 +435,26 @@ class TopGenC:
         We differentiate "gateable" clocks and "hintable" clocks because the
         clock manager has separate register interfaces for each group.
         """
-
-        aon_clocks = set()
-        for src in self.top['clocks']['srcs'] + self.top['clocks'][
-                'derived_srcs']:
-            if src['aon'] == 'yes':
-                aon_clocks.add(src['name'])
+        clocks = self.top['clocks']
 
         gateable_clocks = CEnum(self._top_name + Name(["gateable", "clocks"]))
         hintable_clocks = CEnum(self._top_name + Name(["hintable", "clocks"]))
 
-        # This replicates the behaviour in `topgen.py` in deriving `hints` and
-        # `sw_clocks`.
-        for group in self.top['clocks']['groups']:
-            for (name, source) in group['clocks'].items():
-                if source not in aon_clocks:
-                    # All these clocks start with `clk_` which is redundant.
-                    clock_name = Name.from_snake_case(name).remove_part("clk")
-                    docstring = "Clock {} in group {}".format(
-                        name, group['name'])
-                    if group["sw_cg"] == "yes":
-                        gateable_clocks.add_constant(clock_name, docstring)
-                    elif group["sw_cg"] == "hint":
-                        hintable_clocks.add_constant(clock_name, docstring)
+        c2g = clocks.make_clock_to_group()
+        by_type = clocks.typed_clocks()
 
+        for name in by_type.sw_clks.keys():
+            # All these clocks start with `clk_` which is redundant.
+            clock_name = Name.from_snake_case(name).remove_part("clk")
+            docstring = "Clock {} in group {}".format(name, c2g[name].name)
+            gateable_clocks.add_constant(clock_name, docstring)
         gateable_clocks.add_last_constant("Last Valid Gateable Clock")
+
+        for name in by_type.hint_clks.keys():
+            # All these clocks start with `clk_` which is redundant.
+            clock_name = Name.from_snake_case(name).remove_part("clk")
+            docstring = "Clock {} in group {}".format(name, c2g[name].name)
+            hintable_clocks.add_constant(clock_name, docstring)
         hintable_clocks.add_last_constant("Last Valid Hintable Clock")
 
         self.clkmgr_gateable_clocks = gateable_clocks

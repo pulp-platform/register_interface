@@ -12,7 +12,6 @@
   from topgen import lib
 
   lblock = block.name.lower()
-  use_reg_iface = any([interface['protocol'] == BusProtocol.REG_IFACE and not interace['is_host'] for interface in block.bus_interfaces.interface_list])
 
   # This template shouldn't be instantiated if the device interface
   # doesn't actually have any registers.
@@ -21,11 +20,7 @@
 %>\
 <%def name="construct_classes(block)">\
 
-% if use_reg_iface:
-`include "common_cells/assertions.svh"
-% else:
 `include "prim_assert.sv"
-% endif
 `ifdef UVM
   import uvm_pkg::*;
 `endif
@@ -43,7 +38,7 @@ module ${mod_base}_csr_assert_fpv import tlul_pkg::*;
 <%
   addr_width = rb.get_addr_width()
   addr_msb  = addr_width - 1
-  hro_regs_list = [r for r in rb.flat_regs if not r.hwaccess.allows_write()]
+  hro_regs_list = [r for r in rb.flat_regs if (not r.is_hw_writable() and not r.shadowed)]
   num_hro_regs = len(hro_regs_list)
   hro_map = {r.offset: (idx, r) for idx, r in enumerate(hro_regs_list)}
 %>\
@@ -82,7 +77,7 @@ module ${mod_base}_csr_assert_fpv import tlul_pkg::*;
       ${r.offset}: hro_idx <= ${idx};
 % endfor
       // If the register is not a HRO register, the write data will all update to this default idx.
-      default: hro_idx <= ${num_hro_regs + 1};
+      default: hro_idx <= ${num_hro_regs};
     endcase
   end
 

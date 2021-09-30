@@ -5,11 +5,14 @@
 from typing import Dict, List, Optional
 
 from .access import SWAccess, HWAccess
+from .clocking import Clocking
 from .field import Field
 from .lib import (check_keys, check_str, check_name, check_bool,
                   check_list, check_str_list, check_int)
 from .params import ReggenParams
 from .reg_base import RegBase
+
+import re
 
 REQUIRED_FIELDS = {
     'name': ['s', "name of the register"],
@@ -18,6 +21,12 @@ REQUIRED_FIELDS = {
 }
 
 OPTIONAL_FIELDS = {
+    'async': [
+        's',
+        "indicates the register must cross to a different "
+        "clock domain before use.  The value shown here "
+        "should correspond to one of the module's clocks."
+    ],
     'swaccess': [
         's',
         "software access permission to use for "
@@ -80,8 +89,8 @@ class Register(RegBase):
                  offset: int,
                  name: str,
                  desc: str,
-                 swaccess: SWAccess,
-                 hwaccess: HWAccess,
+                 async_name: str,
+                 async_clk: object,
                  hwext: bool,
                  hwqe: bool,
                  hwre: bool,
@@ -95,24 +104,10 @@ class Register(RegBase):
         super().__init__(offset)
         self.name = name
         self.desc = desc
-
-        self.swaccess = swaccess
-        self.hwaccess = hwaccess
-
+        self.async_name = async_name
+        self.async_clk = async_clk
         self.hwext = hwext
-        if self.hwext and self.hwaccess.key == 'hro' and self.sw_readable():
-            raise ValueError('hwext flag for {} register is set, but '
-                             'hwaccess is hro and the register value '
-                             'is readable by software mode ({}).'
-                             .format(self.name, self.swaccess.key))
-
         self.hwqe = hwqe
-        if self.hwext and not self.hwqe and self.sw_writable():
-            raise ValueError('The {} register has hwext set and is writable '
-                             'by software (mode {}), so must also have hwqe '
-                             'enabled.'
-                             .format(self.name, self.swaccess.key))
-
         self.hwre = hwre
         if self.hwre and not self.hwext:
             raise ValueError('The {} register specifies hwre but not hwext.'
@@ -122,7 +117,8 @@ class Register(RegBase):
         self.tags = tags
 
         self.shadowed = shadowed
-        sounds_shadowy = self.name.lower().endswith('_shadowed')
+        pattern = r'^[a-z0-9_]+_shadowed(?:_[0-9]+)?'
+        sounds_shadowy = re.match(pattern, self.name.lower())
         if self.shadowed and not sounds_shadowy:
             raise ValueError("Register {} has the shadowed flag but its name "
                              "doesn't end with the _shadowed suffix."
@@ -144,6 +140,56 @@ class Register(RegBase):
                 raise ValueError('Register {} has duplicate fields called {}.'
                                  .format(self.name, field.name))
             self.name_to_field[field.name] = field
+
+        # Check that fields have compatible access types if we are hwext
+        if self.hwext:
+            for field in self.fields:
+                if field.hwaccess.key == 'hro' and field.sw_readable():
+                    raise ValueError('The {} register has hwext set, but '
+                                     'field {} has hro hwaccess and the '
+                                     'field value is readable by software '
+                                     '(mode {}).'
+                                     .format(self.name,
+                                             field.name,
+                                             field.swaccess.key))
+                if not self.hwqe and field.sw_writable():
+                    raise ValueError('The {} register has hwext set and field '
+                                     '{} is writable by software (mode {}), '
+                                     'so the register must also enable hwqe.'
+                                     .format(self.name,
+                                             field.name,
+                                             field.swaccess.key))
+
+        # Shadow registers do not support all swaccess types, hence we
+        # need to check that here.
+        if self.shadowed:
+            for field in self.fields:
+                if field.swaccess.key not in ['rw', 'ro', 'wo', 'rw1s', 'rw0c']:
+                    raise ValueError("Shadowed register {} has a field ({}) with "
+                                     "incompatible type '{}'."
+                                     .format(self.name,
+                                             field.name,
+                                             field.swaccess.key))
+
+        # Check that fields will be updated together. This generally comes "for
+        # free", but there's a slight wrinkle with RC fields: these use the
+        # register's read-enable input as their write-enable. We want to ensure
+        # either that every field that is updated as a result of bus accesses
+        # is RC or that none of them are.
+        rc_fields = []
+        we_fields = []
+        for field in self.fields:
+            if field.swaccess.key == 'rc':
+                rc_fields.append(field.name)
+            elif field.swaccess.allows_write:
+                we_fields.append(field.name)
+        if rc_fields and we_fields:
+            raise ValueError("Register {} has both software writable fields "
+                             "({}) and read-clear fields ({}), meaning it "
+                             "doesn't have a single write-enable signal."
+                             .format(self.name,
+                                     ', '.join(rc_fields),
+                                     ', '.join(we_fields)))
 
         # Check that field bits are disjoint
         bits_used = 0
@@ -178,13 +224,28 @@ class Register(RegBase):
     def from_raw(reg_width: int,
                  offset: int,
                  params: ReggenParams,
-                 raw: object) -> 'Register':
+                 raw: object,
+                 clocks: Clocking) -> 'Register':
         rd = check_keys(raw, 'register',
                         list(REQUIRED_FIELDS.keys()),
                         list(OPTIONAL_FIELDS.keys()))
 
         name = check_name(rd['name'], 'name of register')
         desc = check_str(rd['desc'], 'desc for {} register'.format(name))
+
+        async_name = check_str(rd.get('async', ''), 'async clock for {} register'.format(name))
+        async_clk = None
+
+        if async_name:
+            valid_clocks = clocks.clock_signals()
+            if async_name not in valid_clocks:
+                raise ValueError('async clock {} defined for {} does not exist '
+                                 'in valid module clocks {}.'
+                                 .format(async_name,
+                                         name,
+                                         valid_clocks))
+            else:
+                async_clk = clocks.get_by_clock(async_name)
 
         swaccess = SWAccess('{} register'.format(name),
                             rd.get('swaccess', 'none'))
@@ -225,6 +286,11 @@ class Register(RegBase):
                               'shadowed flag for {} register'
                               .format(name))
 
+        if async_name and shadowed:
+            raise ValueError(f'{name} is defined as async and shadowed. '
+                             'This is currently not supported. Please file '
+                             'an issue against OpenTitan if this is needed.')
+
         raw_fields = check_list(rd['fields'],
                                 'fields for {} register'.format(name))
         if not raw_fields:
@@ -236,9 +302,9 @@ class Register(RegBase):
                                  hwaccess,
                                  resval,
                                  reg_width,
-                                 hwqe,
-                                 hwre,
                                  params,
+                                 hwext,
+                                 shadowed,
                                  rf)
                   for idx, rf in enumerate(raw_fields)]
 
@@ -258,7 +324,7 @@ class Register(RegBase):
                                            'storage_err_alert for {} register'
                                            .format(name))
 
-        return Register(offset, name, desc, swaccess, hwaccess,
+        return Register(offset, name, desc, async_name, async_clk,
                         hwext, hwqe, hwre, regwen,
                         tags, resval, shadowed, fields,
                         update_err_alert, storage_err_alert)
@@ -266,17 +332,8 @@ class Register(RegBase):
     def next_offset(self, addrsep: int) -> int:
         return self.offset + addrsep
 
-    def sw_readable(self) -> bool:
-        return self.swaccess.key not in ['wo', 'r0w1c']
-
-    def sw_writable(self) -> bool:
-        return self.swaccess.key != 'ro'
-
-    def dv_rights(self) -> str:
-        return self.swaccess.dv_rights()
-
     def get_n_bits(self, bittype: List[str]) -> int:
-        return sum(field.get_n_bits(self.hwext, bittype)
+        return sum(field.get_n_bits(self.hwext, self.hwqe, self.hwre, bittype)
                    for field in self.fields)
 
     def get_field_list(self) -> List[Field]:
@@ -284,6 +341,13 @@ class Register(RegBase):
 
     def is_homogeneous(self) -> bool:
         return len(self.fields) == 1
+
+    def is_hw_writable(self) -> bool:
+        '''Returns true if any field in this register can be modified by HW'''
+        for fld in self.fields:
+            if fld.hwaccess.allows_write():
+                return True
+        return False
 
     def get_width(self) -> int:
         '''Get the width of the fields in the register in bits
@@ -295,6 +359,44 @@ class Register(RegBase):
         # self.fields is ordered by (increasing) LSB, so we can find the MSB of
         # the register by taking the MSB of the last field.
         return 1 + self.fields[-1].bits.msb
+
+    def needs_we(self) -> bool:
+        '''Return true if at least one field needs a write-enable'''
+        for fld in self.fields:
+            if fld.swaccess.needs_we():
+                return True
+        return False
+
+    def needs_re(self) -> bool:
+        '''Return true if at least one field needs a read-enable
+
+        This is true if any of the following are true:
+
+          - The register is shadowed, because the read has a side effect.
+            I.e., this puts the register back into Phase 0 (next write will
+            go to the staged register). This is useful for software in case
+            it lost track of the current phase. See comportability spec for
+            more details:
+            https://docs.opentitan.org/doc/rm/register_tool/#shadow-registers
+
+          - There's an RC field (where we'll attach the read-enable signal to
+            the subreg's we port)
+
+          - The register is hwext and allows reads (in which case the hardware
+            side might need the re signal)
+
+        '''
+        if self.shadowed:
+            return True
+
+        for fld in self.fields:
+            if fld.swaccess.key == 'rc':
+                return True
+
+            if self.hwext and fld.swaccess.allows_read():
+                return True
+
+        return False
 
     def make_multi(self,
                    reg_width: int,
@@ -346,19 +448,69 @@ class Register(RegBase):
         # we've replicated fields).
         new_resval = None
 
-        return Register(offset, new_name, self.desc,
-                        self.swaccess, self.hwaccess,
+        return Register(offset, new_name, self.desc, self.async_name, self.async_clk,
                         self.hwext, self.hwqe, self.hwre, new_regwen,
                         self.tags, new_resval, self.shadowed, new_fields,
                         self.update_err_alert, self.storage_err_alert)
+
+    def check_valid_regwen(self) -> None:
+        '''Check that this register is valid for use as a REGWEN'''
+        # A REGWEN register should have a single field that's just bit zero.
+        if len(self.fields) != 1:
+            raise ValueError('One or more registers use {} as a '
+                             'write-enable so it should have exactly one '
+                             'field. It actually has {}.'
+                             .format(self.name, len(self.fields)))
+
+        wen_fld = self.fields[0]
+        if wen_fld.bits.width() != 1:
+            raise ValueError('One or more registers use {} as a '
+                             'write-enable so its field should be 1 bit wide, '
+                             'not {}.'
+                             .format(self.name, wen_fld.bits.width()))
+        if wen_fld.bits.lsb != 0:
+            raise ValueError('One or more registers use {} as a '
+                             'write-enable so its field should have LSB 0, '
+                             'not {}.'
+                             .format(self.name, wen_fld.bits.lsb))
+
+        # If the REGWEN bit is SW controlled, check that the register
+        # defaults to enabled. If this bit is read-only by SW and hence
+        # hardware controlled, we do not enforce this requirement.
+        if wen_fld.swaccess.key != "ro" and not self.resval:
+            raise ValueError('One or more registers use {} as a '
+                             'write-enable. Since it is SW-controlled '
+                             'it should have a nonzero reset value.'
+                             .format(self.name))
+
+        if wen_fld.swaccess.key == "rw0c":
+            # The register is software managed: all good!
+            return
+
+        if wen_fld.swaccess.key == "ro" and wen_fld.hwaccess.key == "hwo":
+            # The register is hardware managed: that's fine too.
+            return
+
+        raise ValueError('One or more registers use {} as a write-enable. '
+                         'However, its field has invalid access permissions '
+                         '({} / {}). It should either have swaccess=RW0C '
+                         'or have swaccess=RO and hwaccess=HWO.'
+                         .format(self.name,
+                                 wen_fld.swaccess.key,
+                                 wen_fld.hwaccess.key))
+
+    def bitmask(self) -> str:
+        reg_bitmask = 0
+        for f in self.fields:
+            reg_bitmask |= f.bits.bitmask()
+
+        return format(reg_bitmask, "x")
 
     def _asdict(self) -> Dict[str, object]:
         rd = {
             'name': self.name,
             'desc': self.desc,
             'fields': self.fields,
-            'swaccess': self.swaccess.key,
-            'hwaccess': self.hwaccess.key,
             'hwext': str(self.hwext),
             'hwqe': str(self.hwqe),
             'hwre': str(self.hwre),

@@ -3,56 +3,51 @@
 # SPDX-License-Identifier: Apache-2.0
 
 '''Code representing a list of bus interfaces for a block'''
-from enum import Enum
+
 from typing import Dict, List, Optional, Tuple
 
 from .inter_signal import InterSignal
 from .lib import check_list, check_keys, check_str, check_optional_str
-
-class BusProtocol(Enum):
-    TLUL = "tlul"
-    REG_IFACE = "reg_iface"
-
-    @classmethod
-    def has_value(cls, v):
-        return v in cls._value2member_map_
 
 
 class BusInterfaces:
     def __init__(self,
                  has_unnamed_host: bool,
                  named_hosts: List[str],
+                 host_async: Dict[Optional[str], str],
                  has_unnamed_device: bool,
                  named_devices: List[str],
-                 interface_list: List[Dict]):
+                 device_async: Dict[Optional[str], str]):
         assert has_unnamed_device or named_devices
         assert len(named_hosts) == len(set(named_hosts))
         assert len(named_devices) == len(set(named_devices))
 
         self.has_unnamed_host = has_unnamed_host
         self.named_hosts = named_hosts
+        self.host_async = host_async
         self.has_unnamed_device = has_unnamed_device
         self.named_devices = named_devices
-        self.interface_list = interface_list
+        self.device_async = device_async
 
     @staticmethod
     def from_raw(raw: object, where: str) -> 'BusInterfaces':
         has_unnamed_host = False
         named_hosts = []
-        interface_list = []
+        host_async = {}
 
         has_unnamed_device = False
         named_devices = []
+        device_async = {}
 
         for idx, raw_entry in enumerate(check_list(raw, where)):
             entry_what = 'entry {} of {}'.format(idx + 1, where)
             ed = check_keys(raw_entry, entry_what,
                             ['protocol', 'direction'],
-                            ['name'])
+                            ['name', 'async'])
 
             protocol = check_str(ed['protocol'],
                                  'protocol field of ' + entry_what)
-            if not BusProtocol.has_value(protocol):
+            if protocol != 'tlul':
                 raise ValueError('Unknown protocol {!r} at {}'
                                  .format(protocol, entry_what))
 
@@ -64,6 +59,9 @@ class BusInterfaces:
 
             name = check_optional_str(ed.get('name'),
                                       'name field of ' + entry_what)
+
+            async_clk = check_optional_str(ed.get('async'),
+                                           'async field of ' + entry_what)
 
             if direction == 'host':
                 if name is None:
@@ -78,6 +76,9 @@ class BusInterfaces:
                                          'with name {!r} at {}'
                                          .format(name, where))
                     named_hosts.append(name)
+
+                if async_clk is not None:
+                    host_async[name] = async_clk
             else:
                 if name is None:
                     if has_unnamed_device:
@@ -91,13 +92,15 @@ class BusInterfaces:
                                          'with name {!r} at {}'
                                          .format(name, where))
                     named_devices.append(name)
-            interface_list.append({'name': name, 'protocol': BusProtocol(protocol), 'is_host': direction=='host'})
+
+                if async_clk is not None:
+                    device_async[name] = async_clk
 
         if not (has_unnamed_device or named_devices):
             raise ValueError('No device interface at ' + where)
 
-        return BusInterfaces(has_unnamed_host, named_hosts,
-                             has_unnamed_device, named_devices, interface_list)
+        return BusInterfaces(has_unnamed_host, named_hosts, host_async,
+                             has_unnamed_device, named_devices, device_async)
 
     def has_host(self) -> bool:
         return bool(self.has_unnamed_host or self.named_hosts)
@@ -152,8 +155,9 @@ class BusInterfaces:
     def _if_inter_signal(self,
                          is_host: bool,
                          name: Optional[str]) -> InterSignal:
+        act = 'req' if is_host else 'rsp'
         return InterSignal(self.get_port_name(is_host, name),
-                           None, 'tl', 'tlul_pkg', 'req_rsp', 'rsp', 1, None)
+                           None, 'tl', 'tlul_pkg', 'req_rsp', act, 1, None)
 
     def inter_signals(self) -> List[InterSignal]:
         return [self._if_inter_signal(is_host, name)

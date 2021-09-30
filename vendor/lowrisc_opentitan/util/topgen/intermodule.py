@@ -13,9 +13,9 @@ from reggen.inter_signal import InterSignal
 from reggen.validate import check_int
 from topgen import lib
 
-IM_TYPES = ['uni', 'req_rsp']
-IM_ACTS = ['req', 'rsp', 'rcv']
-IM_VALID_TYPEACT = {'uni': ['req', 'rcv'], 'req_rsp': ['req', 'rsp']}
+IM_TYPES = ['uni', 'req_rsp', 'io']
+IM_ACTS = ['req', 'rsp', 'rcv', 'none']
+IM_VALID_TYPEACT = {'uni': ['req', 'rcv'], 'req_rsp': ['req', 'rsp'], 'io': ['none']}
 IM_CONN_TYPE = ['1-to-1', '1-to-N', 'broadcast']
 
 
@@ -224,11 +224,18 @@ def autoconnect_xbar(topcfg: OrderedDict,
             assert len(matches) == 1
             sig_name = matches[0]['name']
 
-        add_intermodule_connection(obj=topcfg,
-                                   req_m=port_base,
-                                   req_s=sig_name,
-                                   rsp_m=xbar["name"],
-                                   rsp_s="tl_" + esc_name)
+        if is_host:
+            add_intermodule_connection(obj=topcfg,
+                                       req_m=xbar["name"],
+                                       req_s="tl_" + esc_name,
+                                       rsp_m=port_base,
+                                       rsp_s=sig_name)
+        else:
+            add_intermodule_connection(obj=topcfg,
+                                       req_m=port_base,
+                                       req_s=sig_name,
+                                       rsp_m=xbar["name"],
+                                       rsp_s="tl_" + esc_name)
 
 
 def autoconnect(topcfg: OrderedDict, name_to_block: Dict[str, IpBlock]):
@@ -272,7 +279,7 @@ def elab_intermodule(topcfg: OrderedDict):
 
     # Gather the inter_signal_list
     instances = topcfg["module"] + topcfg["memory"] + topcfg["xbar"] + \
-        topcfg["host"] + topcfg["port"]
+        topcfg["port"]
 
     for x in instances:
         old_isl = x.get('inter_signal_list')
@@ -524,6 +531,18 @@ def elab_intermodule(topcfg: OrderedDict):
                              ('conn_type', conn_type),
                              ('index', index),
                              ('netname', netname + rsp_suffix)]))
+        elif sig["type"] == "io":
+            sigsuffix = "_io"
+            topcfg["inter_signal"]["external"].append(
+                OrderedDict([('package', sig.get("package", "")),
+                             ('struct', sig["struct"]),
+                             ('signame', sig_name + sigsuffix),
+                             ('width', sig["width"]), ('type', sig["type"]),
+                             ('default', sig["default"]),
+                             ('direction', "inout"),
+                             ('conn_type', conn_type),
+                             ('index', index),
+                             ('netname', netname)]))
         else:  # uni
             if sig["act"] == "req":
                 sigsuffix = "_o"
@@ -655,14 +674,6 @@ def find_otherside_modules(topcfg: OrderedDict, m,
     """
     # TODO: handle special cases
     special_inst_names = {
-        ('main', 'tl_rom'): ('tl_adapter_rom', 'tl'),
-        ('main', 'tl_ram_main'): ('tl_adapter_ram_main', 'tl'),
-        ('main', 'tl_eflash'): ('tl_adapter_eflash', 'tl'),
-        ('peri', 'tl_ram_ret_aon'): ('tl_adapter_ram_ret_aon', 'tl'),
-        ('main', 'tl_corei'): ('rv_core_ibex', 'tl_i'),
-        ('main', 'tl_cored'): ('rv_core_ibex', 'tl_d'),
-        ('main', 'tl_dm_sba'): ('dm_top', 'tl_h'),
-        ('main', 'tl_debug_mem'): ('dm_top', 'tl_d'),
         ('peri', 'tl_ast'): ('ast', 'tl')
     }
     special_result = special_inst_names.get((m, s))
@@ -859,12 +870,25 @@ def check_intermodule(topcfg: Dict, prefix: str) -> int:
     return total_error
 
 
+def get_direction(sig):
+    if sig["direction"] == "in":
+        return "input "
+    elif sig["direction"] == "out":
+        return "output"
+    elif sig["direction"] == "inout":
+        return "inout "
+
+
 # Template functions
 def im_defname(obj: OrderedDict) -> str:
     """return definition struct name
 
     e.g. flash_ctrl::flash_req_t
     """
+    if obj["type"] == "io":
+        # io type, don't declare anything
+        return ""
+
     if obj["package"] == "":
         # should be logic
         return "logic"
@@ -886,6 +910,7 @@ def im_netname(sig: OrderedDict,
     # Basic check and add missing fields
     err, obj = check_intermodule_field(sig)
     assert not err
+
 
     # Floating signals
     # TODO: Find smarter way to assign default?
@@ -929,9 +954,13 @@ def im_netname(sig: OrderedDict,
         return ""
 
     # Connected signals
-    assert suffix in ["", "req", "rsp"]
+    assert suffix in ["", "req", "rsp", "io"]
 
-    suffix_s = "_{suffix}".format(suffix=suffix) if suffix != "" else suffix
+    # io types have no role
+    if suffix == "io":
+        suffix_s = ""
+    else:
+        suffix_s = "_{suffix}".format(suffix=suffix) if suffix != "" else suffix
 
     # External signal handling
     if "external" in obj and obj["external"]:
@@ -942,7 +971,8 @@ def im_netname(sig: OrderedDict,
             ("rsp", "req"): "_i",
             ("rsp", "rsp"): "_o",
             ("req", ""): "_o",
-            ("rcv", ""): "_i"
+            ("rcv", ""): "_i",
+            ("none", "io"): "_io"
         }
         suffix_s += pairs[(obj['act'], suffix)]
 
@@ -957,6 +987,7 @@ def im_portname(obj: OrderedDict, suffix: str = "") -> str:
 
     e.g signame_o for requester req signal
     """
+
     act = obj['act']
     name = obj['name']
 
@@ -964,6 +995,8 @@ def im_portname(obj: OrderedDict, suffix: str = "") -> str:
         suffix_s = "_o" if act == "req" else "_i"
     elif suffix == "req":
         suffix_s = "_o" if act == "req" else "_i"
+    elif suffix == "io":
+        suffix_s = "_io"
     else:
         suffix_s = "_o" if act == "rsp" else "_i"
 
