@@ -1,0 +1,13 @@
+diff --git a/prim_subreg_shadow.sv b/prim_subreg_shadow.sv
+index bf1bd4c..7f4b537 100644
+--- a/prim_subreg_shadow.sv
++++ b/prim_subreg_shadow.sv
+@@ -4,7 +4,7 @@
+ //
+ // Shadowed register slice conforming to Comportibility guide.
+ 
+-`include "prim_assert.sv"
++`include "common_cells/assertions.svh"
+ 
+ module prim_subreg_shadow
+   import prim_subreg_pkg::*;

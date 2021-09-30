@@ -4,7 +4,7 @@
 //
 // Shadowed register slice conforming to Comportibility guide.
 
-`include "prim_assert.sv"
+`include "common_cells/assertions.svh"
 
 module prim_subreg_shadow
   import prim_subreg_pkg::*;

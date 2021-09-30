@@ -17,9 +17,10 @@
       {from: 'util/reggen', to: 'util/reggen', patch_dir: 'lowrisc_opentitan'}
       {from: 'util/topgen', to: 'util/topgen'}
       {from: 'hw/ip/prim/rtl/prim_subreg.sv', to: 'src/prim_subreg.sv' }
-      {from: 'hw/ip/prim/rtl/prim_subreg_arb.sv', to: 'src/prim_subreg_arb.sv' }
-      {from: 'hw/ip/prim/rtl/prim_subreg_ext.sv', to: 'src/prim_subreg_ext.sv' }
-      {from: 'hw/ip/prim/rtl/prim_subreg_shadow.sv', to: 'src/prim_subreg_shadow.sv' }
+      {from: 'hw/ip/prim/rtl/prim_subreg_arb.sv', to: 'src/' }
+      {from: 'hw/ip/prim/rtl/prim_subreg_ext.sv', to: 'src/' }
+      {from: 'hw/ip/prim/rtl/prim_subreg_shadow.sv', to: 'src/' , patch_dir: 'prim_subreg'}
+      {from: 'hw/ip/prim/rtl/prim_subreg_pkg.sv', to: 'src/'}
   ]
 
 }
