@@ -47,3 +47,4 @@ register_interface_test:
     - src/reg_test.sv
   flags:
     - skip_synthesis
+    - skip_verilator
