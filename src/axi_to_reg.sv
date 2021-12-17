@@ -20,17 +20,17 @@ module axi_to_reg #(
   /// can help break long paths at the expense of registers.
   parameter bit DECOUPLE_W = 1
 )(
-  input  logic clk_i     ,
-  input  logic rst_ni    ,
-  input  logic testmode_i,
-  AXI_BUS.in   in        ,
-  REG_BUS.out  reg_o
+  input  logic  clk_i      ,
+  input  logic  rst_ni     ,
+  input  logic  testmode_i ,
+  AXI_BUS.Slave in         ,
+  REG_BUS.out   reg_o
 );
 
-  AXI_LITE_BUS #(
+  AXI_LITE #(
     .AXI_ADDR_WIDTH ( ADDR_WIDTH ),
     .AXI_DATA_WIDTH ( DATA_WIDTH )
-  ) axi_lite (clk_i);
+  ) axi_lite ();
 
   //  convert axi to axi-lite
   axi_to_axi_lite #(
@@ -62,3 +62,4 @@ module axi_to_reg #(
   );
 
 endmodule
+
