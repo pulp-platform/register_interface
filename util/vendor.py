@@ -45,7 +45,7 @@ OVERRIDABLE_DESC_KEYS = [
     'patch_repo.rev_base',
     'patch_repo.rev_patched',
     'upstream.url',
-    'upstream.ref',
+    'upstream.rev',
 ]
 
 verbose = False
@@ -485,7 +485,15 @@ def _export_patches(patchrepo_clone_url, target_patch_dir, upstream_rev,
     with tempfile.TemporaryDirectory() as clone_dir:
         clone_git_repo(patchrepo_clone_url, clone_dir, patched_rev)
         rev_range = 'origin/' + upstream_rev + '..' + 'origin/' + patched_rev
-        cmd = ['git', 'format-patch', '-o', str(target_patch_dir.resolve()), rev_range]
+        cmd = [
+            'git',
+            'format-patch',
+            '--no-signature',
+            '--no-stat',
+            '-o',
+            str(target_patch_dir.resolve()),
+            rev_range
+        ]
         if not verbose:
             cmd += ['-q']
         subprocess.run(cmd, cwd=str(clone_dir), check=True)
