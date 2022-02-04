@@ -19,12 +19,14 @@ class ResetItem:
         self.path = ""
         if self.rst_type == 'top':
             self.path = f"{hier['top']}rst_{self.name}_n"
+            self.lpg_path = f"{hier['lpg']}{self.name}"
         elif self.rst_type == 'ext':
             self.path = f"{hier['ext']}{self.name}"
 
         self.shadow_path = ""
         if self.rst_type == 'top':
             self.shadow_path = f"{hier['top']}rst_{self.name}_shadowed_n"
+            self.shadow_lpg_path = f"{hier['lpg']}{self.name}_shadowed"
 
         # to be constructed later
         self.domains = []
@@ -120,7 +122,6 @@ class Resets:
                 for reset in self.nodes.values()
                 if reset.gen]
 
-
     def get_top_resets(self) -> list:
         '''Get resets pushed to the top level'''
 
@@ -145,7 +146,6 @@ class Resets:
         if reset.rst_type == 'ext':
             return reset.path
 
-
         if shadow:
             path = reset.shadow_path
         else:
@@ -156,6 +156,25 @@ class Resets:
 
         return path
 
+    def get_lpg_path(self, name: str, domain: Optional[str], shadow = False) -> str:
+        '''Get path to lpg indication signals'''
+
+        reset = self.get_reset_by_name(name)
+        if reset.rst_type == 'int':
+            raise ValueError(f'Reset {name} is not a reset exported from rstmgr')
+
+        if reset.rst_type == 'ext':
+            raise ValueError(f'External reset {name} cannot be associated with an LPG')
+
+        if shadow:
+            path = reset.shadow_lpg_path
+        else:
+            path = reset.lpg_path
+
+        if domain:
+            path += f'[rstmgr_pkg::Domain{domain}Sel]'
+
+        return path
 
     def get_unused_resets(self, domains: list) -> Dict[str, str]:
         '''Get unused resets'''

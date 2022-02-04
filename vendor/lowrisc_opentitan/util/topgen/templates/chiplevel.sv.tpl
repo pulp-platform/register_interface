@@ -71,7 +71,7 @@ unused_im_defs, undriven_im_defs = lib.get_dangling_im_def(top["inter_signal"]["
 module chip_${top["name"]}_${target["name"]} #(
   // Path to a VMEM file containing the contents of the boot ROM, which will be
   // baked into the FPGA bitstream.
-  parameter BootRomInitFile = "boot_rom_fpga_${target["name"]}.32.vmem",
+  parameter BootRomInitFile = "test_rom_fpga_${target["name"]}.32.vmem",
   // Path to a VMEM file containing the contents of the emulated OTP, which will be
   // baked into the FPGA bitstream.
   parameter OtpCtrlMemInitFile = "otp_img_fpga_${target["name"]}.vmem"
@@ -80,23 +80,35 @@ module chip_${top["name"]}_${target["name"]} #(
 module chip_${top["name"]}_${target["name"]} (
 % endif
 <%
-
+  removed_port_names = []
 %>\
   // Dedicated Pads
 % for pad in dedicated_pads:
 <%
   sig = get_dio_sig(pinmux, pad)
+  if pad["name"] in target["pinout"]["remove_ports"]:
+    port_comment = "// Removed port: "
+    removed_port_names.append(pad["name"])
+  else:
+    port_comment = ""
   if sig is not None:
     comment = "// Dedicated Pad for {}".format(sig["name"])
   else:
     comment = "// Manual Pad"
 %>\
-  inout ${pad["name"]}, ${comment}
+  ${port_comment}inout ${pad["name"]}, ${comment}
 % endfor
 
   // Muxed Pads
 % for pad in muxed_pads:
-  inout ${pad["name"]}${" " if loop.last else ","} // MIO Pad ${pad["idx"]}
+<%
+  if pad["name"] in target["pinout"]["remove_ports"]:
+    port_comment = "// Removed port: "
+    removed_port_names.append(pad["name"])
+  else:
+    port_comment = ""
+%>\
+  ${port_comment}inout ${pad["name"]}${" " if loop.last else ","} // MIO Pad ${pad["idx"]}
 % endfor
 );
 
@@ -160,6 +172,13 @@ module chip_${top["name"]}_${target["name"]} (
   ////////////////////////
   // Signal definitions //
   ////////////////////////
+
+  % if removed_port_names:
+  // Net definitions for removed ports
+  % endif
+  % for port in removed_port_names:
+  wire ${port};
+  % endfor
 
   pad_attr_t [pinmux_reg_pkg::NMioPads-1:0] mio_attr;
   pad_attr_t [pinmux_reg_pkg::NDioPads-1:0] dio_attr;
@@ -233,7 +252,7 @@ module chip_${top["name"]}_${target["name"]} (
 % if target["name"] == "asic":
   // AST signals needed in padring
   logic scan_rst_n;
-  lc_ctrl_pkg::lc_tx_t scanmode;
+   prim_mubi_pkg::mubi4_t scanmode;
 % endif
 
   padring #(
@@ -284,7 +303,7 @@ module chip_${top["name"]}_${target["name"]} (
     .scanmode_i   ( scanmode              ),
 % else:
     .clk_scan_i   ( 1'b0                  ),
-    .scanmode_i   ( lc_ctrl_pkg::Off      ),
+    .scanmode_i   ( prim_mubi_pkg::MuBi4False ),
   % endif
     .dio_in_raw_o ( ),
     // Chip IOs
@@ -341,12 +360,6 @@ module chip_${top["name"]}_${target["name"]} (
   assign manual_out_usb_n = dio_out[DioUsbdevDn];
   assign manual_oe_usb_n = dio_oe[DioUsbdevDn];
   assign manual_attr_usb_n = dio_attr[DioUsbdevDn];
-
-  // Connect sense pad
-  assign dio_in[DioUsbdevSense] = manual_in_io_usb_sense0;
-  assign manual_out_io_usb_sense0 = dio_out[DioUsbdevSense];
-  assign manual_oe_io_usb_sense0 = dio_oe[DioUsbdevSense];
-  assign manual_attr_io_sense0 = dio_attr[DioUsbdevSense];
 
   // Connect DN pullup
   assign dio_in[DioUsbdevDnPullup] = manual_in_io_usb_dnpullup0;
@@ -485,14 +498,6 @@ module chip_${top["name"]}_${target["name"]} (
                                                   dio_oe[DioUsbdevDpPullup];
   assign dio_in[DioUsbdevDpPullup] = manual_in_io_usb_dppullup0;
 
-  // DioUsbdevSense
-  assign manual_out_io_usb_sense0 = dio_out[DioUsbdevSense];
-  assign manual_oe_io_usb_sense0  = dio_oe[DioUsbdevSense];
-  assign dio_in[DioUsbdevSense] = use_uphy ? manual_in_io_uphy_sense :
-                                             manual_in_io_usb_sense0;
-  assign manual_out_io_uphy_sense = 1'b0;
-  assign manual_oe_io_uphy_sense = 1'b0;
-
   // DioUsbdevRxEnable
   assign dio_in[DioUsbdevRxEnable] = 1'b0;
 
@@ -510,6 +515,21 @@ module chip_${top["name"]}_${target["name"]} (
   logic unused_in_io_uphy_oe_n;
   assign unused_in_io_uphy_oe_n = manual_in_io_uphy_oe_n;
 
+% endif
+% if target["name"] == "cw310":
+  // Set SPD to full-speed
+  assign manual_oe_io_uphy_spd = 1'b1;
+  assign manual_out_io_uphy_spd = 1'b1;
+
+  logic unused_in_io_uphy_spd;
+  assign unused_in_io_uphy_spd = manual_in_io_uphy_spd;
+
+  // Disable TUSB1106 low-power mode (for now?)
+  assign manual_oe_io_uphy_sus = 1'b1;
+  assign manual_out_io_uphy_sus = 1'b0;
+
+  logic unused_in_io_uphy_sus;
+  assign unused_in_io_uphy_sus = manual_in_io_uphy_sus;
 % endif
 
 ###################################################################
@@ -531,8 +551,6 @@ module chip_${top["name"]}_${target["name"]} (
   // TLUL interface
   tlul_pkg::tl_h2d_t base_ast_bus;
   tlul_pkg::tl_d2h_t ast_base_bus;
-
-  assign ast_base_pwr.main_pok = ast_pwst.main_pok;
 
   // synchronization clocks / rests
   clkmgr_pkg::clkmgr_out_t clkmgr_aon_clocks;
@@ -570,13 +588,16 @@ module chip_${top["name"]}_${target["name"]} (
   ast_pkg::ast_alert_req_t ast_alert_req;
 
   // Flash connections
-  lc_ctrl_pkg::lc_tx_t flash_bist_enable;
+  prim_mubi_pkg::mubi4_t flash_bist_enable;
   logic flash_power_down_h;
   logic flash_power_ready_h;
 
-  // Life cycle clock bypass req/ack
-  lc_ctrl_pkg::lc_tx_t ast_clk_byp_req;
-  lc_ctrl_pkg::lc_tx_t ast_clk_byp_ack;
+  // clock bypass req/ack
+  prim_mubi_pkg::mubi4_t io_clk_byp_req;
+  prim_mubi_pkg::mubi4_t io_clk_byp_ack;
+  prim_mubi_pkg::mubi4_t all_clk_byp_req;
+  prim_mubi_pkg::mubi4_t all_clk_byp_ack;
+  logic hi_speed_sel;
 
   // DFT connections
   logic scan_en;
@@ -655,18 +676,22 @@ module chip_${top["name"]}_${target["name"]} (
 
 % if target["name"] == "asic":
 
+  assign ast_base_pwr.main_pok = ast_pwst.main_pok;
+
   logic [ast_pkg::UsbCalibWidth-1:0] usb_io_pu_cal;
 
   // external clock comes in at a fixed position
   assign ext_clk = mio_in_raw[MioPadIoc6];
 
-  assign pad2ast = {
+  assign pad2ast = { manual_in_ast_misc,
                      mio_in_raw[MioPadIoc3],
-                     mio_in_raw[MioPadIob8],
-                     mio_in_raw[MioPadIob7],
+                     mio_in_raw[MioPadIoc2],
+                     mio_in_raw[MioPadIoc1],
                      mio_in_raw[MioPadIob2],
                      mio_in_raw[MioPadIob1],
-                     mio_in_raw[MioPadIob0]
+                     mio_in_raw[MioPadIob0],
+                     mio_in_raw[MioPadIoa5],
+                     mio_in_raw[MioPadIoa4]
                    };
 
   // AST does not use all clocks / resets forwarded to it
@@ -684,6 +709,8 @@ module chip_${top["name"]}_${target["name"]} (
   // TODO: Hook this up when FPGA pads are updated
   assign ext_clk = '0;
   assign pad2ast = '0;
+
+  assign ast_base_pwr.main_pok = base_ast_pwr.main_pd_n;
 
   logic clk_main, clk_usb_48mhz, clk_aon, rst_n;
   clkgen_xil7series # (
@@ -728,8 +755,6 @@ module chip_${top["name"]}_${target["name"]} (
     .adc_a1_ai             ( CC2 ),
 
     // Direct short to PAD
-    .pad2ast_t0_ai         ( IOA4 ),
-    .pad2ast_t1_ai         ( IOA5 ),
     .ast2pad_t0_ao         ( IOA2 ),
     .ast2pad_t1_ao         ( IOA3 ),
 % else:
@@ -747,8 +772,6 @@ module chip_${top["name"]}_${target["name"]} (
     .adc_a1_ai             ( '0 ),
 
     // Direct short to PAD
-    .pad2ast_t0_ai         ( '0 ),
-    .pad2ast_t1_ai         ( '0 ),
     .ast2pad_t0_ao         (  ),
     .ast2pad_t1_ao         (  ),
 
@@ -828,11 +851,18 @@ module chip_${top["name"]}_${target["name"]} (
     // dft
     .dft_strap_test_i      ( dft_strap_test   ),
     .lc_dft_en_i           ( dft_en           ),
+    .fla_obs_i             ( '0 ),
+    .otp_obs_i             ( '0 ),
+    .otm_obs_i             ( '0 ),
+    .obs_ctrl_o            (  ),
     // pinmux related
     .padmux2ast_i          ( pad2ast    ),
     .ast2padmux_o          ( ast2pinmux ),
-    .lc_clk_byp_req_i      ( ast_clk_byp_req   ),
-    .lc_clk_byp_ack_o      ( ast_clk_byp_ack   ),
+    .ext_freq_is_96m_i     ( hi_speed_sel ),
+    .all_clk_byp_req_i     ( all_clk_byp_req  ),
+    .all_clk_byp_ack_o     ( all_clk_byp_ack  ),
+    .io_clk_byp_req_i      ( io_clk_byp_req   ),
+    .io_clk_byp_ack_o      ( io_clk_byp_ack   ),
     .flash_bist_en_o       ( flash_bist_enable ),
     // Memory configuration connections
     .dpram_rmf_o           ( ast_ram_2p_fcfg ),
@@ -857,6 +887,14 @@ module chip_${top["name"]}_${target["name"]} (
   // Manual Pad / Signal Tie-offs //
   //////////////////////////////////
 
+  assign manual_out_ast_misc = 1'b0;
+  assign manual_oe_ast_misc = 1'b0;
+  always_comb begin
+    // constantly enable pull-down
+    manual_attr_ast_misc = '0;
+    manual_attr_ast_misc.pull_select = 1'b0;
+    manual_attr_ast_misc.pull_en = 1'b1;
+  end
   assign manual_out_por_n = 1'b0;
   assign manual_oe_por_n = 1'b0;
 
@@ -899,13 +937,15 @@ module chip_${top["name"]}_${target["name"]} (
 
   // TODO: generalize this USB mux code and align with other tops.
 
-  // Connect the DP pad
+  // Connect the D+ pad
+  // Note that we use two pads in parallel for the D+ channel to meet electrical specifications.
   assign dio_in[DioUsbdevDp] = manual_in_usb_p;
   assign manual_out_usb_p = dio_out[DioUsbdevDp];
   assign manual_oe_usb_p = dio_oe[DioUsbdevDp];
   assign manual_attr_usb_p = dio_attr[DioUsbdevDp];
 
-  // Connect the DN pad
+  // Connect the D- pads
+  // Note that we use two pads in parallel for the D- channel to meet electrical specifications.
   assign dio_in[DioUsbdevDn] = manual_in_usb_n;
   assign manual_out_usb_n = dio_out[DioUsbdevDn];
   assign manual_oe_usb_n = dio_oe[DioUsbdevDn];
@@ -933,7 +973,6 @@ module chip_${top["name"]}_${target["name"]} (
   );
 
   // Tie-off unused signals
-  assign dio_in[DioUsbdevSense] = 1'b0;
   assign dio_in[DioUsbdevSe0] = 1'b0;
   assign dio_in[DioUsbdevDpPullup] = 1'b0;
   assign dio_in[DioUsbdevDnPullup] = 1'b0;
@@ -943,10 +982,6 @@ module chip_${top["name"]}_${target["name"]} (
 
   logic unused_usb_sigs;
   assign unused_usb_sigs = ^{
-    // Sense
-    dio_out[DioUsbdevSense],
-    dio_oe[DioUsbdevSense],
-    dio_attr[DioUsbdevSense],
     // SE0
     dio_out[DioUsbdevSe0],
     dio_oe[DioUsbdevSe0],
@@ -1015,8 +1050,11 @@ module chip_${top["name"]}_${target["name"]} (
     .es_rng_req_o                 ( es_rng_req                 ),
     .es_rng_rsp_i                 ( es_rng_rsp                 ),
     .es_rng_fips_o                ( es_rng_fips                ),
-    .ast_clk_byp_req_o            ( ast_clk_byp_req            ),
-    .ast_clk_byp_ack_i            ( ast_clk_byp_ack            ),
+    .io_clk_byp_req_o             ( io_clk_byp_req             ),
+    .io_clk_byp_ack_i             ( io_clk_byp_ack             ),
+    .all_clk_byp_req_o            ( all_clk_byp_req            ),
+    .all_clk_byp_ack_i            ( all_clk_byp_ack            ),
+    .hi_speed_sel_o               ( hi_speed_sel               ),
     .ast2pinmux_i                 ( ast2pinmux                 ),
     .ast_init_done_i              ( ast_init_done              ),
 
@@ -1076,28 +1114,11 @@ module chip_${top["name"]}_${target["name"]} (
   //////////////////////
   // Top-level design //
   //////////////////////
-  pwrmgr_pkg::pwr_ast_rsp_t ast_base_pwr;
-  ast_pkg::ast_alert_req_t ast_base_alerts;
-  ast_pkg::ast_status_t ast_base_status;
-
-  assign ast_base_pwr.slow_clk_val = 1'b1;
-  assign ast_base_pwr.core_clk_val = 1'b1;
-  assign ast_base_pwr.io_clk_val   = 1'b1;
-  assign ast_base_pwr.usb_clk_val  = 1'b1;
-  assign ast_base_pwr.main_pok     = 1'b1;
-
-  ast_pkg::ast_dif_t silent_alert = '{
-                                       p: 1'b0,
-                                       n: 1'b1
-                                     };
-
-  assign ast_base_alerts.alerts = {ast_pkg::NumAlerts{silent_alert}};
-  assign ast_base_status.io_pok = {ast_pkg::NumIoRails{1'b1}};
 
   // the rst_ni pin only goes to AST
   // the rest of the logic generates reset based on the 'pok' signal.
   // for verilator purposes, make these two the same.
-  lc_ctrl_pkg::lc_tx_t lc_clk_bypass;
+  prim_mubi_pkg::mubi4_t lc_clk_bypass;   // TODO Tim
 
 // TODO: align this with ASIC version to minimize the duplication.
 // Also need to add AST simulation and FPGA emulation models for things like entropy source -
@@ -1163,11 +1184,14 @@ module chip_${top["name"]}_${target["name"]} (
     .usbdev_usb_ref_pulse_o       ( usb_ref_val           ),
     .ast_edn_req_i                ( ast_edn_edn_req       ),
     .ast_edn_rsp_o                ( ast_edn_edn_rsp       ),
-    .flash_bist_enable_i          ( lc_ctrl_pkg::Off      ),
+    .flash_bist_enable_i          ( flash_bist_enable     ),
     .flash_power_down_h_i         ( 1'b0                  ),
     .flash_power_ready_h_i        ( 1'b1                  ),
-    .ast_clk_byp_req_o            ( ast_clk_byp_req       ),
-    .ast_clk_byp_ack_i            ( ast_clk_byp_ack       ),
+    .io_clk_byp_req_o             ( io_clk_byp_req        ),
+    .io_clk_byp_ack_i             ( io_clk_byp_ack        ),
+    .all_clk_byp_req_o            ( all_clk_byp_req       ),
+    .all_clk_byp_ack_i            ( all_clk_byp_ack       ),
+    .hi_speed_sel_o               ( hi_speed_sel          ),
 
 % if target["name"] != "cw305":
     .ast_tl_req_o                 ( base_ast_bus               ),
@@ -1210,7 +1234,7 @@ module chip_${top["name"]}_${target["name"]} (
     .dft_hold_tap_sel_i ( '0               ),
     .scan_rst_ni        ( 1'b1             ),
     .scan_en_i          ( 1'b0             ),
-    .scanmode_i         ( lc_ctrl_pkg::Off )
+    .scanmode_i         ( prim_mubi_pkg::MuBi4False )
   );
 % endif
 

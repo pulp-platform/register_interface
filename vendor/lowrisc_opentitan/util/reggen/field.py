@@ -7,9 +7,11 @@ from typing import Dict, List, Optional
 from .access import SWAccess, HWAccess
 from .bits import Bits
 from .enum_entry import EnumEntry
-from .lib import (check_keys, check_str, check_name,
+from .lib import (check_keys, check_str, check_name, check_bool,
                   check_list, check_str_list, check_xint)
 from .params import ReggenParams
+from design.mubi.prim_mubi import is_width_valid, mubi_value_as_int  # type: ignore
+
 
 REQUIRED_FIELDS = {
     'bits': ['b', "bit or bit range (msb:lsb)"]
@@ -39,6 +41,10 @@ OPTIONAL_FIELDS = {
     'tags': [
         's',
         "tags for the field, followed by the format 'tag_name:item1:item2...'"
+    ],
+    'mubi': [
+        'b',
+        "boolean flag for whether the field is a multi-bit type"
     ]
 }
 
@@ -110,21 +116,41 @@ class Field:
         else:
             hwaccess = default_hwaccess
 
+        raw_mubi = rd.get('mubi', False)
+        is_mubi = check_bool(raw_mubi, 'mubi field for {}'.format(where))
+
         # Currently internal shadow registers do not support hw write type
         if not hwext and shadowed and hwaccess.allows_write():
             raise ValueError('Internal Shadow registers do not currently support '
                              'hardware write')
 
         bits = Bits.from_raw(where, reg_width, params, rd['bits'])
-
         raw_resval = rd.get('resval')
+        if is_mubi:
+            # When mubi type, the resval supplied is a boolean which is converted
+            # to a mubi value
+            chk_resval = check_bool(raw_resval, 'resval field for {}'.format(where))
+
+            # Check mubi width is supported
+            if not is_width_valid(bits.width()):
+                raise ValueError(f'mubi field for {name} does not support width '
+                                 f'of {bits.width()}')
+
+            # Get actual integer value based on mubi selection
+            raw_resval = mubi_value_as_int(chk_resval, bits.width())
+
         if raw_resval is None:
             # The field doesn't define a reset value. Use bits from reg_resval
-            # if it's defined, otherwise None (which means "x").
-            if reg_resval is None:
+            # if it's defined. If not, we assume that a hwext register comes up
+            # as "x" (because the reggen code doesn't have any way to predict
+            # it). That's represented as None. A non-hwext register is reset to
+            # zero.
+            if reg_resval is not None:
+                resval = bits.extract_field(reg_resval)  # type: Optional[int]
+            elif hwext:
                 resval = None
             else:
-                resval = bits.extract_field(reg_resval)
+                resval = 0
         else:
             # The field does define a reset value. It should be an integer or
             # 'x'. In the latter case, we set resval to None (as above).

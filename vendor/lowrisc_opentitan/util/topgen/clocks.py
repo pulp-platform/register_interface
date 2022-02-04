@@ -80,7 +80,6 @@ class ClockSignal:
 class Group:
     def __init__(self,
                  raw: Dict[str, object],
-                 sources: Dict[str, SourceClock],
                  what: str):
         self.name = str(raw['name'])
         self.src = str(raw['src'])
@@ -98,16 +97,6 @@ class Group:
                              f'unique set.')
 
         self.clocks = {}  # type: Dict[str, ClockSignal]
-        raw_clocks = raw.get('clocks', {})
-        if not isinstance(raw_clocks, dict):
-            raise ValueError(f'clocks for {what} is not a dictionary')
-        for clk_name, src_name in raw_clocks.items():
-            src = sources.get(src_name)
-            if src is None:
-                raise ValueError(f'The {clk_name} entry of clocks for {what} '
-                                 f'has source {src_name}, which is not a '
-                                 f'known clock source.')
-            self.add_clock(clk_name, src)
 
     def add_clock(self, clk_name: str, src: SourceClock) -> ClockSignal:
         # Duplicates are ok, so long as they have the same source.
@@ -136,6 +125,10 @@ class Group:
 
 
 class TypedClocks(NamedTuple):
+    # External clocks that are consumed only inside the clkmgr and are fed from
+    # an external ast source.
+    ast_clks: Dict[str, ClockSignal]
+
     # Clocks fed through clkmgr but not disturbed in any way. This maintains
     # the clocking structure consistency. This includes two groups of clocks:
     #
@@ -162,6 +155,13 @@ class TypedClocks(NamedTuple):
     # only used to derive divided clocks (we might gate the divided clocks, but
     # don't bother gating the upstream source).
     rg_srcs: List[str]
+
+    # A diction of the clock families.
+    # The key for each is root clock, while the list contains all the clocks
+    # of the family, inclusive of itself.
+    # For example
+    # 'io': ['io', 'io_div2', 'io_div4']
+    parent_child_clks: Dict[str, List]
 
     def all_clocks(self) -> Dict[str, ClockSignal]:
         ret = {}
@@ -227,7 +227,7 @@ class Clocks:
         assert isinstance(raw['groups'], list)
         for idx, raw_grp in enumerate(raw['groups']):
             assert isinstance(raw_grp, dict)
-            grp = Group(raw_grp, self.srcs, f'clocks.groups[{idx}]')
+            grp = Group(raw_grp, f'clocks.groups[{idx}]')
             self.groups[grp.name] = grp
 
     def _asdict(self) -> Dict[str, object]:
@@ -271,11 +271,13 @@ class Clocks:
 
     def typed_clocks(self) -> TypedClocks:
         '''Split the clocks by type'''
+        ast_clks = {}
         ft_clks = {}
         rg_clks = {}
         sw_clks = {}
         hint_clks = {}
         rg_srcs_set = set()
+        parent_child_clks = {}
 
         for grp in self.groups.values():
             if grp.name == 'powerup':
@@ -284,6 +286,10 @@ class Clocks:
                 continue
 
             for clk, sig in grp.clocks.items():
+                if grp.src == "ext":
+                    ast_clks[clk] = sig
+                    continue
+
                 if sig.src.aon:
                     # Any always-on clock is a feedthrough
                     ft_clks[clk] = sig
@@ -310,11 +316,22 @@ class Clocks:
         # Define a canonical ordering for rg_srcs
         rg_srcs = list(sorted(rg_srcs_set))
 
-        return TypedClocks(ft_clks=ft_clks,
+        # Define a list for each "family" of clocks
+        for name, clk in self.srcs.items():
+            if not clk.aon:
+                parent_child_clks[name] = [name];
+
+        for name, clk in self.derived_srcs.items():
+            parent_child_clks[clk.src.name].append(name)
+
+
+        return TypedClocks(ast_clks=ast_clks,
+                           ft_clks=ft_clks,
                            rg_clks=rg_clks,
                            sw_clks=sw_clks,
                            hint_clks=hint_clks,
-                           rg_srcs=rg_srcs)
+                           rg_srcs=rg_srcs,
+                           parent_child_clks=parent_child_clks)
 
     def make_clock_to_group(self) -> Dict[str, Group]:
         '''Return a map from clock name to the group containing the clock'''
@@ -323,3 +340,14 @@ class Clocks:
             for clk_name in grp.clocks.keys():
                 c2g[clk_name] = grp
         return c2g
+
+    def all_derived_srcs(self) -> List[str]:
+        '''Return a list of all the clocks used as the source for derived clocks'''
+
+        srcs = []
+
+        for derived in self.derived_srcs.values():
+            if derived.src.name not in srcs:
+                srcs.append(derived.src.name)
+
+        return srcs

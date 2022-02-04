@@ -309,10 +309,19 @@ def shadow_name(name: str) -> str:
         return 'rst_shadowed_ni'
 
 
-def get_reset_path(top: object, reset: str, shadow_sel = False):
+def get_reset_path(top: object, reset: str, shadow_sel: bool = False):
     """Return the appropriate reset path given name
     """
     return top['resets'].get_path(reset['name'], reset['domain'], shadow_sel)
+
+
+def get_reset_lpg_path(top: object, reset: str, shadow_sel: bool = False, domain: bool = None):
+    """Return the appropriate LPG reset path given name
+    """
+    if domain is not None:
+        return top['resets'].get_lpg_path(reset['name'], domain, shadow_sel)
+    else:
+        return top['resets'].get_lpg_path(reset['name'], reset['domain'], shadow_sel)
 
 
 def get_unused_resets(top):
@@ -321,27 +330,39 @@ def get_unused_resets(top):
     return top['resets'].get_unused_resets(top['power']['domains'])
 
 
+def get_templated_modules(top):
+    return [m['type'] for m in top['module'] if is_templated(m)]
+
+
+def get_ipgen_modules(top):
+    return [m['type'] for m in top['module'] if is_ipgen(m)]
+
+
 def is_templated(module):
     """Returns an indication where a particular module is templated
     """
-    if "attr" not in module:
-        return False
-    elif module["attr"] in ["templated"]:
-        return True
-    else:
-        return False
+    return module.get('attr') in ["templated"]
+
+
+def is_ipgen(module):
+    """Returns an indication where a particular module is ipgen
+    """
+    return module.get('attr') in ["ipgen"]
 
 
 def is_top_reggen(module):
     """Returns an indication where a particular module is NOT templated
        and requires top level specific reggen
     """
-    if "attr" not in module:
-        return False
-    elif module["attr"] in ["reggen_top", "reggen_only"]:
-        return True
-    else:
-        return False
+    return module.get('attr') in ["reggen_top", "reggen_only"]
+
+
+def is_reggen_only(module):
+    """Returns an indication where a particular module is NOT templated,
+       requires top level specific reggen and is NOT instantiated in the
+       top
+    """
+    return module.get('attr') == "reggen_only"
 
 
 def is_inst(module):
@@ -353,7 +374,7 @@ def is_inst(module):
 
     if "attr" not in module:
         top_level_module = True
-    elif module["attr"] in ["normal", "templated", "reggen_top"]:
+    elif module["attr"] in ["normal", "templated", "ipgen", "reggen_top"]:
         top_level_module = True
     elif module["attr"] in ["reggen_only"]:
         top_level_module = False

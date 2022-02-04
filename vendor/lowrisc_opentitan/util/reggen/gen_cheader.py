@@ -205,7 +205,7 @@ def gen_cdefines_module_param(outstr: TextIO,
                               existing_defines: Set[str]) -> None:
     # Presently there is only one type (int), however if the new types are
     # added, they potentially need to be handled differently.
-    known_types = ["int"]
+    known_types = ["int", "int unsigned"]
     if param.param_type not in known_types:
         warnings.warn("Cannot generate a module define of type {}"
                       .format(param.param_type))
@@ -217,7 +217,7 @@ def gen_cdefines_module_param(outstr: TextIO,
     # otherwise, assume StudlyCaps and covert it to snake_case.
     param_name = param.name if '_' in param.name else to_snake_case(param.name)
     define_name = as_define(module_name + '_PARAM_' + param_name)
-    if param.param_type == "int":
+    if param.param_type == "int" or param.param_type == "int unsigned":
         define = gen_define(define_name, [], param.value,
                             existing_defines)
 
@@ -244,20 +244,17 @@ def gen_cdefines_module_params(outstr: TextIO,
 
 def gen_multireg_field_defines(outstr: TextIO,
                                regname: str,
-                               field: Field,
+                               fields: List[Field],
                                subreg_num: int,
                                regwidth: int,
                                existing_defines: Set[str]) -> None:
-    field_width = field.bits.width()
-    fields_per_reg = regwidth // field_width
 
-    define_name = regname + '_' + as_define(field.name + "_FIELD_WIDTH")
-    define = gen_define(define_name, [], str(field_width), existing_defines)
-    genout(outstr, define)
+    for each_field in fields:
+        field_width = each_field.bits.width()
 
-    define_name = regname + '_' + as_define(field.name + "_FIELDS_PER_REG")
-    define = gen_define(define_name, [], str(fields_per_reg), existing_defines)
-    genout(outstr, define)
+        define_name = regname + '_' + as_define(each_field.name + "_FIELD_WIDTH")
+        define = gen_define(define_name, [], str(field_width), existing_defines)
+        genout(outstr, define)
 
     define_name = regname + "_MULTIREG_COUNT"
     define = gen_define(define_name, [], str(subreg_num), existing_defines)
@@ -274,12 +271,12 @@ def gen_cdefine_multireg(outstr: TextIO,
                          existing_defines: Set[str]) -> None:
     comment = multireg.reg.desc + " (common parameters)"
     genout(outstr, format_comment(first_line(comment)))
-    if len(multireg.reg.fields) == 1:
+    if len(multireg.reg.fields) >= 1:
         regname = as_define(component + '_' + multireg.reg.name)
-        gen_multireg_field_defines(outstr, regname, multireg.reg.fields[0],
+        gen_multireg_field_defines(outstr, regname, multireg.reg.fields,
                                    len(multireg.regs), regwidth, existing_defines)
     else:
-        log.warn("Non-homogeneous multireg " + multireg.reg.name +
+        log.warn("Fieldless multireg " + multireg.reg.name +
                  " skip multireg specific data generation.")
 
     for subreg in multireg.regs:

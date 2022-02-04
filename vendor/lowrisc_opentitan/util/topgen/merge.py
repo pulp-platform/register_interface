@@ -8,7 +8,7 @@ import re
 from collections import OrderedDict
 from copy import deepcopy
 from math import ceil, log2
-from typing import Dict, List
+from typing import Dict, List, Union, Tuple
 
 from topgen import c, lib
 from .clocks import Clocks
@@ -521,12 +521,35 @@ def _find_module_name(modules, module_type):
     return None
 
 
+def _get_clock_group_name(clk: Union[str, OrderedDict], default_ep_grp) -> Tuple[str, str]:
+    """Return the clock group of a particular clock connection
+
+    Checks whether there is a specific clock group associated with this
+    connection and returns its name. If not, this returns the default clock
+    group of the clock end point.
+    """
+    # If the value of a particular connection is a dict,
+    # there are additional attributes to explore
+    if isinstance(clk, str):
+        group_name = default_ep_grp
+        src_name = clk
+    else:
+        assert isinstance(clk, Dict)
+        group_name = clk.get('group', default_ep_grp)
+        src_name = clk['clock']
+
+    return group_name, src_name
+
+
 def extract_clocks(top: OrderedDict):
     '''Add clock exports to top and connections to endpoints
 
     This function sets up all the clock-related machinery that is needed to
     generate the (templated) clkmgr code. This runs before we load up IP blocks
     with reggen, so can only see top-level configuration.
+
+    By default each end point (peripheral, memory etc) is in the same clock group.
+    However, it is possible to define the group attribute per clock if required.
 
     '''
     clocks = top['clocks']
@@ -540,42 +563,44 @@ def extract_clocks(top: OrderedDict):
         # Ensure each module has a default case
         export_if = ep.get('clock_reset_export', [])
 
-        # if no clock group assigned, default is unique
+        # The clock group attribute in an end point sets the defaut
+        # group for every clock in that end point.
+        #
+        # However, the end point can also override specific clocks to
+        # different groups inside clock_srcs.  This is generally not
+        # recommended as it is better to stay consistent.  However
+        # if needed, the method is available.
         ep['clock_group'] = 'secure' if 'clock_group' not in ep else ep[
             'clock_group']
         ep_grp = ep['clock_group']
 
         # end point names and clocks
         ep_name = ep['name']
-        ep_clks = []
-
-        group = clocks.groups[ep_grp]
 
         for port, clk in ep['clock_srcs'].items():
-            ep_clks.append(clk)
+
+            group_name, src_name = _get_clock_group_name(clk, ep_grp)
+
+            group = clocks.groups[group_name]
 
             name = ''
             hier_name = clocks.hier_paths[group.src]
 
             if group.src == 'ext':
-                # clock comes from top ports
-                if clk == 'main':
-                    name = "i"
-                else:
-                    name = "{}_i".format(clk)
+                name = "{}_i".format(src_name)
 
             elif group.unique:
                 # new unqiue clock name
-                name = "{}_{}".format(clk, ep_name)
+                name = "{}_{}".format(src_name, ep_name)
 
             else:
                 # new group clock name
-                name = "{}_{}".format(clk, ep_grp)
+                name = "{}_{}".format(src_name, group_name)
 
             clk_name = "clk_" + name
 
             # add clock to a particular group
-            clk_sig = clocks.add_clock_to_group(group, clk_name, clk)
+            clk_sig = clocks.add_clock_to_group(group, clk_name, src_name)
             clk_sig.add_endpoint(ep_name, port)
 
             # add clock connections
@@ -715,11 +740,10 @@ def amend_resets(top, name_to_block):
             top_resets.mark_reset_shadowed(primary_reset['name'])
 
         # domain determination
-        for d in module["domain"]:
-            for r in block.clocking.items:
-                if r.reset:
-                    reset = module['reset_connections'][r.reset]
-                    top_resets.add_reset_domain(reset['name'], d)
+        for r in block.clocking.items:
+            if r.reset:
+                reset = module['reset_connections'][r.reset]
+                top_resets.add_reset_domain(reset['name'], reset['domain'])
 
         # This code is here to ensure if amend_clocks/resets switched order
         # everything would still work
@@ -745,6 +769,59 @@ def amend_resets(top, name_to_block):
 
     # reset class objects
     top["resets"] = top_resets
+
+
+def create_alert_lpgs(top, name_to_block: Dict[str, IpBlock]):
+    '''Loop over modules and determine number of unique LPGs'''
+    num_lpg = 0
+    lpg_dict = {}
+    top['alert_lpgs'] = []
+    for module in top["module"]:
+        # the alert senders are attached to the primary clock of this block,
+        # so let's start by getting that primary clock port of an IP (we need
+        # that to look up the clock connection at the top-level).
+        block = name_to_block[module['type']]
+        block_clock = block.get_primary_clock()
+        primary_reset = module['reset_connections'][block_clock.reset]
+
+        # for the purposes of alert handler LPGs, we need to know:
+        #   1) the clock group of the primary clock
+        #   2) the primary reset name
+        #   3) the domain of the primary reset
+        #
+        # 1) need to figure out whether the primary clock has a
+        #    specific clock group assignment or not
+        clk = module['clock_srcs'][block_clock.clock]
+        clock_group, _ = _get_clock_group_name(clk, module['clock_group'])
+
+        # 2-3) get reset info
+        reset_name = primary_reset['name']
+        reset_domain = primary_reset['domain']
+
+        # using this info, we can create an LPG identifier
+        # and uniquify it via a dict.
+        lpg_name = '_'.join([clock_group, reset_name, reset_domain])
+        if lpg_name not in lpg_dict:
+            lpg_dict.update({lpg_name: num_lpg})
+            # since the alert handler can tolerate timing delays on LPG
+            # indication signals, we can just use the clock / reset signals
+            # of the first block that belongs to a new unique LPG.
+            clock = module['clock_connections'][block_clock.clock]
+            top['alert_lpgs'].append({
+                'name': lpg_name,
+                'clock_group': clock_group,
+                'clock_connection': clock,
+                'reset_connection': primary_reset
+            })
+            num_lpg += 1
+
+        # annotate all alerts of this module to use this LPG
+        for alert in top['alert']:
+            if alert['module_name'] == module['name']:
+                alert.update({
+                    'lpg_name': lpg_name,
+                    'lpg_idx': lpg_dict[lpg_name]
+                })
 
 
 def ensure_interrupt_modules(top: OrderedDict, name_to_block: Dict[str, IpBlock]):

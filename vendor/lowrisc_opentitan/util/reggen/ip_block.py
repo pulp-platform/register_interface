@@ -17,6 +17,7 @@ from .lib import (check_keys, check_name, check_int, check_bool,
 from .params import ReggenParams, LocalParam
 from .reg_block import RegBlock
 from .signal import Signal
+from .countermeasure import CounterMeasure
 
 
 REQUIRED_FIELDS = {
@@ -66,7 +67,8 @@ OPTIONAL_FIELDS = {
         "information in a comment at the top of the "
         "file."
     ],
-    'wakeup_list': ['lnw', "list of peripheral wakeups"]
+    'wakeup_list': ['lnw', "list of peripheral wakeups"],
+    'countermeasures': ["ln", "list of countermeasures in this block"]
 }
 
 
@@ -92,7 +94,8 @@ class IpBlock:
                  reset_requests: Sequence[Signal],
                  expose_reg_if: bool,
                  scan_reset: bool,
-                 scan_en: bool):
+                 scan_en: bool,
+                 countermeasures: List[CounterMeasure]):
         assert reg_blocks
 
         # Check that register blocks are in bijection with device interfaces
@@ -122,6 +125,7 @@ class IpBlock:
         self.expose_reg_if = expose_reg_if
         self.scan_reset = scan_reset
         self.scan_en = scan_en
+        self.countermeasures = countermeasures
 
     @staticmethod
     def from_raw(param_defaults: List[Tuple[str, str]],
@@ -162,6 +166,19 @@ class IpBlock:
         alerts = Alert.from_raw_list('alert_list for block {}'
                                      .format(name),
                                      rd.get('alert_list', []))
+        known_cms = {}
+        raw_cms = rd.get('countermeasures', [])
+
+        countermeasures = CounterMeasure.from_raw_list(
+            'countermeasure list for block {}'
+            .format(name), raw_cms)
+
+        # Ensure that the countermeasures are unique
+        for x in countermeasures:
+            if str(x) in known_cms:
+                raise RuntimeError(f"Duplicate countermeasure {str(x)}")
+            else:
+                known_cms.update({str(x): 1})
 
         no_auto_intr = check_bool(rd.get('no_auto_intr_regs', not interrupts),
                                   'no_auto_intr_regs field of ' + what)
@@ -265,7 +282,8 @@ class IpBlock:
                        interrupts, no_auto_intr, alerts, no_auto_alert,
                        scan, inter_signals, bus_interfaces,
                        hier_path, clocking, xputs,
-                       wakeups, rst_reqs, expose_reg_if, scan_reset, scan_en)
+                       wakeups, rst_reqs, expose_reg_if, scan_reset, scan_en,
+                       countermeasures)
 
     @staticmethod
     def from_text(txt: str,
@@ -365,3 +383,13 @@ class IpBlock:
         '''Return primary clock of an block'''
 
         return self.clocking.primary
+
+    def check_cm_annotations(self,
+                             rtl_names: Dict[str, List[Tuple[str, int]]],
+                             where: str) -> None:
+        '''Check RTL annotations against countermeasure list of this block'''
+
+        what = '{} block at {}'.format(self.name, where)
+        CounterMeasure.check_annotation_list(what,
+                                             rtl_names,
+                                             self.countermeasures)
