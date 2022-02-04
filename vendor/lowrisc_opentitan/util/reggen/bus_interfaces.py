@@ -4,10 +4,20 @@
 
 '''Code representing a list of bus interfaces for a block'''
 
+from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
 from .inter_signal import InterSignal
 from .lib import check_list, check_keys, check_str, check_optional_str
+
+
+class BusProtocol(Enum):
+    TLUL = "tlul"
+    REG_IFACE = "reg_iface"
+
+    @classmethod
+    def has_value(cls, v):
+        return v in cls._value2member_map_
 
 
 class BusInterfaces:
@@ -17,7 +27,8 @@ class BusInterfaces:
                  host_async: Dict[Optional[str], str],
                  has_unnamed_device: bool,
                  named_devices: List[str],
-                 device_async: Dict[Optional[str], str]):
+                 device_async: Dict[Optional[str], str],
+                 interface_list: List[Dict]):
         assert has_unnamed_device or named_devices
         assert len(named_hosts) == len(set(named_hosts))
         assert len(named_devices) == len(set(named_devices))
@@ -28,6 +39,7 @@ class BusInterfaces:
         self.has_unnamed_device = has_unnamed_device
         self.named_devices = named_devices
         self.device_async = device_async
+        self.interface_list = interface_list
 
     @staticmethod
     def from_raw(raw: object, where: str) -> 'BusInterfaces':
@@ -38,6 +50,7 @@ class BusInterfaces:
         has_unnamed_device = False
         named_devices = []
         device_async = {}
+        interface_list = []
 
         for idx, raw_entry in enumerate(check_list(raw, where)):
             entry_what = 'entry {} of {}'.format(idx + 1, where)
@@ -47,7 +60,7 @@ class BusInterfaces:
 
             protocol = check_str(ed['protocol'],
                                  'protocol field of ' + entry_what)
-            if protocol != 'tlul':
+            if not BusProtocol.has_value(protocol):
                 raise ValueError('Unknown protocol {!r} at {}'
                                  .format(protocol, entry_what))
 
@@ -96,11 +109,16 @@ class BusInterfaces:
                 if async_clk is not None:
                     device_async[name] = async_clk
 
+            interface_list.append({'name': name,
+                                   'protocol': BusProtocol(protocol),
+                                   'is_host': direction == 'host'})
+
         if not (has_unnamed_device or named_devices):
             raise ValueError('No device interface at ' + where)
 
         return BusInterfaces(has_unnamed_host, named_hosts, host_async,
-                             has_unnamed_device, named_devices, device_async)
+                             has_unnamed_device, named_devices, device_async,
+                             interface_list)
 
     def has_host(self) -> bool:
         return bool(self.has_unnamed_host or self.named_hosts)

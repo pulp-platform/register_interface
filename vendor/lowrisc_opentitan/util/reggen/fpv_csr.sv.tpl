@@ -12,6 +12,7 @@
   from topgen import lib
 
   lblock = block.name.lower()
+  use_reg_iface = any([interface['protocol'] == BusProtocol.REG_IFACE and not interace['is_host'] for interface in block.bus_interfaces.interface_list])
 
   # This template shouldn't be instantiated if the device interface
   # doesn't actually have any registers.
@@ -20,7 +21,11 @@
 %>\
 <%def name="construct_classes(block)">\
 
+% if use_reg_iface:
+`include "common_cells/assertions.svh"
+% else:
 `include "prim_assert.sv"
+% endif
 `ifdef UVM
   import uvm_pkg::*;
 `endif
