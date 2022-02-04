@@ -125,8 +125,8 @@ index 518e917..d4ed6c6 100644
 +  from reggen.bus_interfaces import BusProtocol
  
    num_wins = len(rb.windows)
-   num_wins_width = ((num_wins+1).bit_length()) - 1
-@@ -39,6 +41,11 @@
+   num_reg_dsp = 1 if rb.all_regs else 0
+@@ -43,6 +45,11 @@
                  rb.windows[0].offset != 0 or
                  rb.windows[0].size_in_bytes != (1 << addr_width)))
  
@@ -138,7 +138,7 @@ index 518e917..d4ed6c6 100644
  
    common_data_intg_gen = 0 if rb.has_data_intg_passthru else 1
    adapt_data_intg_gen = 1 if rb.has_data_intg_passthru else 0
-@@ -56,9 +63,27 @@
+@@ -60,9 +67,27 @@
        reg_clk_expr = clock.clock
        reg_rst_expr = clock.reset
  %>
@@ -167,7 +167,7 @@ index 518e917..d4ed6c6 100644
    input clk_i,
    input rst_ni,
  % if rb.has_internal_shadowed_reg():
-@@ -68,13 +93,23 @@ module ${mod_name} (
+@@ -72,13 +97,23 @@ module ${mod_name} (
    input ${clock.clock},
    input ${clock.reset},
  % endfor
@@ -191,7 +191,7 @@ index 518e917..d4ed6c6 100644
  
  % endif
    // To HW
-@@ -85,8 +120,10 @@ module ${mod_name} (
+@@ -89,8 +124,10 @@ module ${mod_name} (
    input  ${lblock}_reg_pkg::${hw2reg_t} hw2reg, // Read
  % endif
  
@@ -202,7 +202,7 @@ index 518e917..d4ed6c6 100644
  
    // Config
    input devmode_i // If 1, explicit error return for unmapped register access
-@@ -94,9 +131,6 @@ module ${mod_name} (
+@@ -99,9 +135,6 @@ module ${mod_name} (
  
    import ${lblock}_reg_pkg::* ;
  
@@ -212,7 +212,7 @@ index 518e917..d4ed6c6 100644
  % if rb.all_regs:
    localparam int DW = ${block.regwidth};
    localparam int DBW = DW/8;                    // Byte Width
-@@ -115,8 +149,14 @@ module ${mod_name} (
+@@ -119,8 +153,14 @@ module ${mod_name} (
    logic [DW-1:0] reg_rdata_next;
    logic reg_busy;
  
@@ -226,22 +226,22 @@ index 518e917..d4ed6c6 100644
 +% endif
  % endif
  
-   % if rb.async_if:
-@@ -137,6 +177,7 @@ module ${mod_name} (
+ % if rb.async_if:
+@@ -141,6 +181,7 @@ module ${mod_name} (
    );
-   % endif
+ % endif
  
 +% if not use_reg_iface:
+ % if rb.all_regs:
    // incoming payload check
    logic intg_err;
-   tlul_cmd_intg_chk u_chk (
-@@ -166,23 +207,63 @@ module ${mod_name} (
+@@ -176,23 +217,63 @@ module ${mod_name} (
      .tl_i(tl_o_pre),
      .tl_o(${tl_d2h_expr})
    );
 +% endif
  
- % if num_dsp == 1:
+ % if num_dsp <= 1:
    ## Either no windows (and just registers) or no registers and only
    ## one window.
    % if num_wins == 0:
@@ -262,7 +262,7 @@ index 518e917..d4ed6c6 100644
 +    % endif
    % endif
  % else:
-+  logic [${num_wins_width-1}:0] reg_steer;
++  logic [${steer_msb}:0] reg_steer;
 +
 +  % if use_reg_iface:
 +  ${reg_intf_req} [${num_dsp}-1:0] reg_intf_demux_req;
@@ -296,12 +296,12 @@ index 518e917..d4ed6c6 100644
    tlul_pkg::tl_h2d_t tl_socket_h2d [${num_dsp}];
    tlul_pkg::tl_d2h_t tl_socket_d2h [${num_dsp}];
  
--  logic [${num_wins_width}:0] reg_steer;
+-  logic [${steer_msb}:0] reg_steer;
 -
    // socket_1n connection
    % if rb.all_regs:
    assign tl_reg_h2d = tl_socket_h2d[${num_wins}];
-@@ -229,6 +310,7 @@ module ${mod_name} (
+@@ -240,10 +321,15 @@ module ${mod_name} (
      .tl_d_i (tl_socket_d2h),
      .dev_select_i (reg_steer)
    );
@@ -309,36 +309,20 @@ index 518e917..d4ed6c6 100644
  
    // Create steering logic
    always_comb begin
-@@ -240,12 +322,21 @@ module ${mod_name} (
++  % if use_reg_iface:
++    unique case (${'reg_req_i.addr[AW-1:0]'}) inside
++  % else:
+     unique case (${f'{tl_h2d_expr}.a_address[AW-1:0]'}) inside
++  % endif
+   % for i,w in enumerate(rb.windows):
+ <%
        base_addr = w.offset
-       limit_addr = w.offset + w.size_in_bytes
+@@ -261,14 +347,26 @@ module ${mod_name} (
+       end
+     endcase
  
--      hi_check = f'{tl_h2d_expr}.a_address[AW-1:0] < {limit_addr}'
-+      if use_reg_iface:
-+        hi_check = 'reg_req_i.addr[AW-1:0] < {}'.format(limit_addr)
-+      else:
-+        hi_check = f'{tl_h2d_expr}.a_address[AW-1:0] < {limit_addr}'
-       addr_checks = []
-       if base_addr > 0:
--        addr_checks.append(f'{tl_h2d_expr}.a_address[AW-1:0] >= {base_addr}')
-+        if use_reg_iface:
-+          addr_checks.append('reg_req_i.addr[AW-1:0] >= {}'.format(base_addr))
-+        else:
-+          addr_checks.append(f'{tl_h2d_expr}.a_address[AW-1:0] >= {base_addr}')
-       if limit_addr < 2**addr_width:
--        addr_checks.append(f'{tl_h2d_expr}.a_address[AW-1:0] < {limit_addr}')
-+        if use_reg_iface:
-+          addr_checks.append('reg_req_i.addr[AW-1:0] < {}'.format(limit_addr))
-+        else:
-+          addr_checks.append(f'{tl_h2d_expr}.a_address[AW-1:0] < {limit_addr}')
- 
-       addr_test = ' && '.join(addr_checks)
- %>\
-@@ -257,13 +348,25 @@ module ${mod_name} (
-     end
-       % endif
-   % endfor
 +  % if not use_reg_iface:
+     // Override this in case of an integrity error
      if (intg_err) begin
        reg_steer = ${num_dsp-1};
      end
@@ -360,15 +344,15 @@ index 518e917..d4ed6c6 100644
    tlul_adapter_reg #(
      .RegAw(AW),
      .RegDw(DW),
-@@ -304,6 +407,7 @@ module ${mod_name} (
-     .dst_pulse_o(sync_${clk_name}_update)
+@@ -312,6 +410,7 @@ module ${mod_name} (
+     .dst_ack_i(sync_${clk_name}_update)
    );
-   % endfor
-+% endif
- % endif
+     % endfor
++  % endif
+   % endif
  
    % if block.expose_reg_if:
-@@ -315,7 +419,11 @@ module ${mod_name} (
+@@ -323,7 +421,11 @@ module ${mod_name} (
  
    % endif
    assign reg_rdata = reg_rdata_next ;
@@ -380,7 +364,7 @@ index 518e917..d4ed6c6 100644
  
    // Define SW related signals
    // Format: <reg>_<field>_{wd|we|qs}
-@@ -604,16 +712,18 @@ ${rdata_gen(f, r.name.lower() + "_" + f.name.lower())}\
+@@ -620,16 +722,18 @@ ${rdata_gen(f, r.name.lower() + "_" + f.name.lower())}\
  % if rb.all_regs:
  
    // Assertions for Register Interface
@@ -401,6 +385,3 @@ index 518e917..d4ed6c6 100644
  
  % endif
  endmodule
--- 
-2.16.5
-

@@ -10,6 +10,8 @@
   from reggen.register import Register
   from reggen.multi_register import MultiRegister
   from reggen.bits import Bits
+  from reggen.ip_block import IpBlock
+  from reggen.bus_interfaces import BusProtocol
 
   num_wins = len(rb.windows)
   num_reg_dsp = 1 if rb.all_regs else 0
@@ -43,6 +45,11 @@
                 rb.windows[0].offset != 0 or
                 rb.windows[0].size_in_bytes != (1 << addr_width)))
 
+  # Check if the interface protocol is reg_interface
+  use_reg_iface = any([interface['protocol'] == BusProtocol.REG_IFACE and not interface['is_host'] for interface in block.bus_interfaces.interface_list])
+  reg_intf_req = "reg_req_t"
+  reg_intf_rsp = "reg_rsp_t"
+
 
   common_data_intg_gen = 0 if rb.has_data_intg_passthru else 1
   adapt_data_intg_gen = 1 if rb.has_data_intg_passthru else 0
@@ -60,9 +67,27 @@
       reg_clk_expr = clock.clock
       reg_rst_expr = clock.reset
 %>
+% if use_reg_iface:
+`include "common_cells/assertions.svh"
+% else:
 `include "prim_assert.sv"
+% endif
 
-module ${mod_name} (
+module ${mod_name} \
+% if use_reg_iface:
+#(
+    parameter type reg_req_t = logic,
+    parameter type reg_rsp_t = logic,
+    parameter int AW = ${addr_width}
+) \
+% else:
+    % if needs_aw:
+#(
+    parameter int AW = ${addr_width}
+) \
+    % endif
+% endif
+(
   input clk_i,
   input rst_ni,
 % if rb.has_internal_shadowed_reg():
@@ -72,13 +97,23 @@ module ${mod_name} (
   input ${clock.clock},
   input ${clock.reset},
 % endfor
+% if use_reg_iface:
+  input  ${reg_intf_req} reg_req_i,
+  output ${reg_intf_rsp} reg_rsp_o,
+% else:
   input  tlul_pkg::tl_h2d_t tl_i,
   output tlul_pkg::tl_d2h_t tl_o,
+% endif
 % if num_wins != 0:
 
   // Output port for window
+% if use_reg_iface:
+  output ${reg_intf_req} [${num_wins}-1:0] reg_req_win_o,
+  input  ${reg_intf_rsp} [${num_wins}-1:0] reg_rsp_win_i,
+% else:
   output tlul_pkg::tl_h2d_t tl_win_o${win_array_decl},
   input  tlul_pkg::tl_d2h_t tl_win_i${win_array_decl},
+% endif
 
 % endif
   // To HW
@@ -89,8 +124,10 @@ module ${mod_name} (
   input  ${lblock}_reg_pkg::${hw2reg_t} hw2reg, // Read
 % endif
 
+% if not use_reg_iface:
   // Integrity check errors
   output logic intg_err_o,
+% endif
 
   // Config
   input devmode_i // If 1, explicit error return for unmapped register access
@@ -98,9 +135,6 @@ module ${mod_name} (
 
   import ${lblock}_reg_pkg::* ;
 
-% if needs_aw:
-  localparam int AW = ${addr_width};
-% endif
 % if rb.all_regs:
   localparam int DW = ${block.regwidth};
   localparam int DBW = DW/8;                    // Byte Width
@@ -119,8 +153,14 @@ module ${mod_name} (
   logic [DW-1:0] reg_rdata_next;
   logic reg_busy;
 
+% if use_reg_iface:
+  // Below register interface can be changed
+  reg_req_t  reg_intf_req;
+  reg_rsp_t  reg_intf_rsp;
+% else:
   tlul_pkg::tl_h2d_t tl_reg_h2d;
   tlul_pkg::tl_d2h_t tl_reg_d2h;
+% endif
 % endif
 
 % if rb.async_if:
@@ -141,6 +181,7 @@ module ${mod_name} (
   );
 % endif
 
+% if not use_reg_iface:
 % if rb.all_regs:
   // incoming payload check
   logic intg_err;
@@ -176,22 +217,62 @@ module ${mod_name} (
     .tl_i(tl_o_pre),
     .tl_o(${tl_d2h_expr})
   );
+% endif
 
 % if num_dsp <= 1:
   ## Either no windows (and just registers) or no registers and only
   ## one window.
   % if num_wins == 0:
+    % if use_reg_iface:
+  assign reg_intf_req = reg_req_i;
+  assign reg_rsp_o = reg_intf_rsp;
+    % else:
   assign tl_reg_h2d = ${tl_h2d_expr};
   assign tl_o_pre   = tl_reg_d2h;
+    % endif
   % else:
+    % if use_reg_iface:
+  assign reg_req_win_o = reg_req_i;
+  assign reg_rsp_o = reg_rsp_win_i;
+    % else:
   assign tl_win_o = ${tl_h2d_expr};
   assign tl_o_pre = tl_win_i;
+    % endif
   % endif
 % else:
+  logic [${steer_msb}:0] reg_steer;
+
+  % if use_reg_iface:
+  ${reg_intf_req} [${num_dsp}-1:0] reg_intf_demux_req;
+  ${reg_intf_rsp} [${num_dsp}-1:0] reg_intf_demux_rsp;
+
+  // demux connection
+  assign reg_intf_req = reg_intf_demux_req[${num_wins}];
+  assign reg_intf_demux_rsp[${num_wins}] = reg_intf_rsp;
+
+    % for i,t in enumerate(block.wins):
+  assign reg_req_win_o[${i}] = reg_intf_demux_req[${i}];
+  assign reg_intf_demux_rsp[${i}] = reg_rsp_win_i[${i}];
+    % endfor
+
+  // Create Socket_1n
+  reg_demux #(
+    .NoPorts  (${num_dsp}),
+    .req_t    (${reg_intf_req}),
+    .rsp_t    (${reg_intf_rsp})
+  ) i_reg_demux (
+    .clk_i,
+    .rst_ni,
+    .in_req_i (reg_req_i),
+    .in_rsp_o (reg_rsp_o),
+    .out_req_o (reg_intf_demux_req),
+    .out_rsp_i (reg_intf_demux_rsp),
+    .in_select_i (reg_steer)
+  );
+
+  % else:
   tlul_pkg::tl_h2d_t tl_socket_h2d [${num_dsp}];
   tlul_pkg::tl_d2h_t tl_socket_d2h [${num_dsp}];
-
-  logic [${steer_msb}:0] reg_steer;
 
   // socket_1n connection
   % if rb.all_regs:
@@ -240,10 +321,15 @@ module ${mod_name} (
     .tl_d_i (tl_socket_d2h),
     .dev_select_i (reg_steer)
   );
+  % endif
 
   // Create steering logic
   always_comb begin
+  % if use_reg_iface:
+    unique case (${'reg_req_i.addr[AW-1:0]'}) inside
+  % else:
     unique case (${f'{tl_h2d_expr}.a_address[AW-1:0]'}) inside
+  % endif
   % for i,w in enumerate(rb.windows):
 <%
       base_addr = w.offset
@@ -261,14 +347,26 @@ module ${mod_name} (
       end
     endcase
 
+  % if not use_reg_iface:
     // Override this in case of an integrity error
     if (intg_err) begin
       reg_steer = ${num_dsp-1};
     end
+  % endif
   end
 % endif
 % if rb.all_regs:
 
+% if use_reg_iface:
+  assign reg_we = reg_intf_req.valid & reg_intf_req.write;
+  assign reg_re = reg_intf_req.valid & ~reg_intf_req.write;
+  assign reg_addr = reg_intf_req.addr;
+  assign reg_wdata = reg_intf_req.wdata;
+  assign reg_be = reg_intf_req.wstrb;
+  assign reg_intf_rsp.rdata = reg_rdata;
+  assign reg_intf_rsp.error = reg_error;
+  assign reg_intf_rsp.ready = 1'b1;
+% else:
   tlul_adapter_reg #(
     .RegAw(AW),
     .RegDw(DW),
@@ -313,6 +411,7 @@ module ${mod_name} (
   );
     % endfor
   % endif
+  % endif
 
   % if block.expose_reg_if:
   assign reg2hw.reg_if.reg_we    = reg_we;
@@ -323,7 +422,11 @@ module ${mod_name} (
 
   % endif
   assign reg_rdata = reg_rdata_next ;
+% if use_reg_iface:
+  assign reg_error = (devmode_i & addrmiss) | wr_err;
+% else:
   assign reg_error = (devmode_i & addrmiss) | wr_err | intg_err;
+% endif
 
   // Define SW related signals
   // Format: <reg>_<field>_{wd|we|qs}
@@ -620,16 +723,18 @@ ${rdata_gen(f, r.name.lower() + "_" + f.name.lower())}\
 % if rb.all_regs:
 
   // Assertions for Register Interface
+% if not use_reg_iface:
   `ASSERT_PULSE(wePulse, reg_we, ${reg_clk_expr}, !${reg_rst_expr})
   `ASSERT_PULSE(rePulse, reg_re, ${reg_clk_expr}, !${reg_rst_expr})
 
   `ASSERT(reAfterRv, $rose(reg_re || reg_we) |=> tl_o_pre.d_valid, ${reg_clk_expr}, !${reg_rst_expr})
 
-  `ASSERT(en2addrHit, (reg_we || reg_re) |-> $onehot0(addr_hit), ${reg_clk_expr}, !${reg_rst_expr})
-
   // this is formulated as an assumption such that the FPV testbenches do disprove this
   // property by mistake
   //`ASSUME(reqParity, tl_reg_h2d.a_valid |-> tl_reg_h2d.a_user.chk_en == tlul_pkg::CheckDis)
+% endif
+  `ASSERT(en2addrHit, (reg_we || reg_re) |-> $onehot0(addr_hit), ${reg_clk_expr}, !${reg_rst_expr})
+
 
 % endif
 endmodule
