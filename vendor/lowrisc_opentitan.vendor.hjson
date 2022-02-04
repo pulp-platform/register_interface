@@ -16,6 +16,7 @@
       {from: 'util/regtool.py', to: 'util/regtool.py'}
       {from: 'util/reggen', to: 'util/reggen', patch_dir: 'lowrisc_opentitan'}
       {from: 'util/topgen', to: 'util/topgen'}
+      {from: 'util/design/mubi', to: 'util/design/mubi'}
       {from: 'hw/ip/prim/rtl/prim_subreg.sv', to: 'src/prim_subreg.sv' }
       {from: 'hw/ip/prim/rtl/prim_subreg_arb.sv', to: 'src/' }
       {from: 'hw/ip/prim/rtl/prim_subreg_ext.sv', to: 'src/' }
