@@ -23,6 +23,7 @@ sources:
   - src/reg_mux.sv
   - src/reg_to_mem.sv
   - src/reg_uniform.sv
+  - src/reg_to_tlul.sv
   - vendor/lowrisc_opentitan/src/prim_subreg_shadow.sv
   - vendor/lowrisc_opentitan/src/prim_subreg.sv
   # Level 2
