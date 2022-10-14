@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## 0.3.4 - 2022-14-10
+### Added
+- Add reg2tlul protocol converter
+
 ## 0.3.3 - 2022-08-26
 ### Fixed
 - Fix `reg_mux` multiple assignments
