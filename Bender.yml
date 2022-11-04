@@ -22,6 +22,7 @@ sources:
   - src/reg_demux.sv
   - src/reg_err_slv.sv
   - src/reg_mux.sv
+  - src/reg_to_apb.sv
   - src/reg_to_mem.sv
   - src/reg_uniform.sv
   - src/reg_to_tlul.sv
