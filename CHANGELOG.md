@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## 0.3.6 - 2022-11-07
+### Added
+- Add `reg_to_abp` adapter to convert between register_interface protocol to AMBA APB
+
 ## 0.3.5 - 2022-11-02
 ### Added
 - Add `reg_err_slv` module, a reg interface slave that always responds with an error.
