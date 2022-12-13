@@ -4,6 +4,7 @@ package:
 
 dependencies:
   axi: { git: "https://github.com/pulp-platform/axi.git", version: 0.38.0 }
+  apb: { git: "https://github.com/pulp-platform/apb.git", version: 0.2.2}
   common_cells: { git: "https://github.com/pulp-platform/common_cells.git", version: 1.21.0 }
 
 export_include_dirs:
