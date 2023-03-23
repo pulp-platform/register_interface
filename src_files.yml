@@ -17,6 +17,7 @@ register_interface:
     - src/reg_cdc.sv
     - src/reg_demux.sv
     - src/reg_err_slv.sv
+    - src/reg_filter_empty_writes.sv
     - src/reg_mux.sv
     - src/reg_to_apb.sv
     - src/reg_to_mem.sv
