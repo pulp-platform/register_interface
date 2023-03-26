@@ -10,10 +10,10 @@ This commit is a manual rebase of the original patches on top of the upstream ma
  reg_top.sv.tpl    | 135 ++++++++++++++++++++++++++++++++++++++----
  3 files changed, 143 insertions(+), 17 deletions(-)
 
-diff --git a/bus_interfaces.py b/bus_interfaces.py
+diff --git a/reggen/bus_interfaces.py b/reggen/bus_interfaces.py
 index 40182fb87..37c5818e1 100644
---- a/bus_interfaces.py
-+++ b/bus_interfaces.py
+--- a/reggen/bus_interfaces.py
++++ b/reggen/bus_interfaces.py
 @@ -3,19 +3,28 @@
  # SPDX-License-Identifier: Apache-2.0
  
@@ -83,10 +83,10 @@ index 40182fb87..37c5818e1 100644
  
      def has_host(self) -> bool:
          return bool(self.has_unnamed_host or self.named_hosts)
-diff --git a/fpv_csr.sv.tpl b/fpv_csr.sv.tpl
+diff --git a/reggen/fpv_csr.sv.tpl b/reggen/fpv_csr.sv.tpl
 index 5308da8a6..01f20c738 100644
---- a/fpv_csr.sv.tpl
-+++ b/fpv_csr.sv.tpl
+--- a/reggen/fpv_csr.sv.tpl
++++ b/reggen/fpv_csr.sv.tpl
 @@ -12,6 +12,7 @@
    from topgen import lib
  
@@ -107,10 +107,10 @@ index 5308da8a6..01f20c738 100644
  `ifdef UVM
    import uvm_pkg::*;
  `endif
-diff --git a/reg_top.sv.tpl b/reg_top.sv.tpl
+diff --git a/reggen/reg_top.sv.tpl b/reggen/reg_top.sv.tpl
 index 8b4e8d3be..4cd9036a2 100644
---- a/reg_top.sv.tpl
-+++ b/reg_top.sv.tpl
+--- a/reggen/reg_top.sv.tpl
++++ b/reggen/reg_top.sv.tpl
 @@ -9,6 +9,8 @@
    from reggen.lib import get_basename
    from reggen.register import Register
