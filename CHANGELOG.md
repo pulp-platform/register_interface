@@ -3,6 +3,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
+
+## 0.3.9 - 2023-03-28
+### Changed
+- Updated Bender.yml to be in line with latest bender vendor syntax
+
+### Fixed
+- Packported upstream fix for wrong mux sel width in case of more than one window.
+- Use BlockAW width rather than AW for address signal width.
+
 ## 0.3.8 - 2022-12-13
 ### Added
 - Added interface variant of the apb_to_reg converter
