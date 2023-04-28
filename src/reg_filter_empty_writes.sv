@@ -30,7 +30,7 @@ module reg_filter_empty_writes #(
     out_req_o = in_req_i;
     in_rsp_o = out_rsp_i;
 
-    if (in_req_i.valid && in_req_i.we && in_req_i.strb == '0) begin
+    if (in_req_i.valid && in_req_i.write && in_req_i.wstrb == '0) begin
       out_req_o.valid = 1'b0;
       in_rsp_o.ready = 1'b1;
       in_rsp_o.error = 1'b0;
