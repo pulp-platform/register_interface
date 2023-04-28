@@ -27,7 +27,7 @@ module reg_filter_empty_writes #(
 );
 
   always_comb begin
-    out_req_o = out_req_i;
+    out_req_o = in_req_i;
     in_rsp_o = out_rsp_i;
 
     if (in_req_i.valid && in_req_i.we && in_req_i.strb == '0) begin

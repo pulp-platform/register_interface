@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+### Fixed
+- Fix typo in `reg_filter_empty_writes`.
+
 ## 0.4.0 - 2023-04-28
 ### Breaking Changes
 - Removed payload_t parameter of reg_err_slave and directly use a logic array to improve general tool support.
