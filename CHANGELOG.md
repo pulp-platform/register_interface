@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Breaking Changes
 - Removed payload_t parameter of reg_err_slave and directly use a logic array to improve general tool support.
 
+### Added
+- Add `reg_filter_empty_writes` to return a ready without forwarding the valid for writes with strb='0.
+
 ## 0.3.9 - 2023-03-28
 ### Changed
 - Updated Bender.yml to be in line with latest bender vendor syntax
