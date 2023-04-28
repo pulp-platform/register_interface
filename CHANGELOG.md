@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Added
 - Add `reg_filter_empty_writes` to return a ready without forwarding the valid for writes with strb='0.
+- Split `reg_cdc` module into two different modules (`reg_cdc_src` and `reg_cdc_dst`) for source and destination side of the clock domain crossing. The `reg_cdc` module internally instantiates these IPs while maintaining the same external interface.
+
+### Changed
+- Add optional parameter to apb_to_reg converter to latch inputs on apb_sel assertions rather than feeding all signals through combinationally. The default parameter value is to not change existing behavior and this particular change is thus backward compatible.
+
 
 ## 0.3.9 - 2023-03-28
 ### Changed
