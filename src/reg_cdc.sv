@@ -12,7 +12,7 @@
 // Florian Zaruba <zarubaf@iis.ee.ethz.ch>
 
 module reg_cdc_src #(
-    parameter logic CDC4Phase = 1'b0,
+    parameter string CDC_KIND = "cdc_2phase", // "cdc_2phase" or "cdc_4phase"
     parameter type  req_t     = logic,
     parameter type  rsp_t     = logic
 ) (
@@ -47,57 +47,58 @@ module reg_cdc_src #(
         src_rsp_o.ready = src_ready_o;
     end
 
-    generate
-       if(CDC4Phase) begin: gen_cdc_4phase
+    if(CDC_KIND == "cdc_4phase") begin: gen_cdc_4phase
 
-          cdc_4phase_src #(.T(req_t)) i_cdc_req_src (
-            .rst_ni       ( src_rst_ni    ),
-            .clk_i        ( src_clk_i     ),
-            .data_i       ( src_req       ),
-            .valid_i      ( src_req_valid ),
-            .ready_o      ( src_req_ready ),
-            .async_req_o  ( async_req_o   ),
-            .async_ack_i  ( async_ack_i   ),
-            .async_data_o ( async_data_o  )
-          );
+       cdc_4phase_src #(.T(req_t)) i_cdc_req_src (
+         .rst_ni       ( src_rst_ni    ),
+         .clk_i        ( src_clk_i     ),
+         .data_i       ( src_req       ),
+         .valid_i      ( src_req_valid ),
+         .ready_o      ( src_req_ready ),
+         .async_req_o  ( async_req_o   ),
+         .async_ack_i  ( async_ack_i   ),
+         .async_data_o ( async_data_o  )
+       );
 
-          cdc_4phase_dst #(.T(rsp_t)) i_cdc_rsp_dst (
-            .rst_ni       ( src_rst_ni    ),
-            .clk_i        ( src_clk_i     ),
-            .data_o       ( src_rsp       ),
-            .valid_o      ( src_rsp_valid ),
-            .ready_i      ( src_rsp_ready ),
-            .async_req_i  ( async_req_i   ),
-            .async_ack_o  ( async_ack_o   ),
-            .async_data_i ( async_data_i  )
-          );
+       cdc_4phase_dst #(.T(rsp_t)) i_cdc_rsp_dst (
+         .rst_ni       ( src_rst_ni    ),
+         .clk_i        ( src_clk_i     ),
+         .data_o       ( src_rsp       ),
+         .valid_o      ( src_rsp_valid ),
+         .ready_i      ( src_rsp_ready ),
+         .async_req_i  ( async_req_i   ),
+         .async_ack_o  ( async_ack_o   ),
+         .async_data_i ( async_data_i  )
+       );
 
-       end else begin : gen_cdc_2phase
+    end else if (CDC_KIND == "cdc_2phase") begin : gen_cdc_2phase
 
-          cdc_2phase_src #(.T(req_t)) i_cdc_req_src (
-            .rst_ni       ( src_rst_ni    ),
-            .clk_i        ( src_clk_i     ),
-            .data_i       ( src_req       ),
-            .valid_i      ( src_req_valid ),
-            .ready_o      ( src_req_ready ),
-            .async_req_o  ( async_req_o   ),
-            .async_ack_i  ( async_ack_i   ),
-            .async_data_o ( async_data_o  )
-          );
+       cdc_2phase_src #(.T(req_t)) i_cdc_req_src (
+         .rst_ni       ( src_rst_ni    ),
+         .clk_i        ( src_clk_i     ),
+         .data_i       ( src_req       ),
+         .valid_i      ( src_req_valid ),
+         .ready_o      ( src_req_ready ),
+         .async_req_o  ( async_req_o   ),
+         .async_ack_i  ( async_ack_i   ),
+         .async_data_o ( async_data_o  )
+       );
 
-          cdc_2phase_dst #(.T(rsp_t)) i_cdc_rsp_dst (
-            .rst_ni       ( src_rst_ni    ),
-            .clk_i        ( src_clk_i     ),
-            .data_o       ( src_rsp       ),
-            .valid_o      ( src_rsp_valid ),
-            .ready_i      ( src_rsp_ready ),
-            .async_req_i  ( async_req_i   ),
-            .async_ack_o  ( async_ack_o   ),
-            .async_data_i ( async_data_i  )
-          );
+       cdc_2phase_dst #(.T(rsp_t)) i_cdc_rsp_dst (
+         .rst_ni       ( src_rst_ni    ),
+         .clk_i        ( src_clk_i     ),
+         .data_o       ( src_rsp       ),
+         .valid_o      ( src_rsp_valid ),
+         .ready_i      ( src_rsp_ready ),
+         .async_req_i  ( async_req_i   ),
+         .async_ack_o  ( async_ack_o   ),
+         .async_data_i ( async_data_i  )
+       );
 
-       end
-    endgenerate
+    end else begin : gen_elab_error
+      $error("Unknown CDC_KIND %s", CDC_KIND);
+    end
+
 
     // In the source domain we translate src_valid_i into a transaction on the
     // CDC into the destination domain. The FSM then transitions into a busy
@@ -138,9 +139,9 @@ module reg_cdc_src #(
 endmodule
 
 module reg_cdc_dst #(
-    parameter logic CDC4Phase = 1'b0,
-    parameter type  req_t     = logic,
-    parameter type  rsp_t     = logic
+  parameter string CDC_KIND = "cdc_2phase", // "cdc_2phase" or "cdc_4phase"
+  parameter type req_t = logic,
+  parameter type rsp_t = logic
 ) (
     input  logic dst_clk_i,
     input  logic dst_rst_ni,
@@ -174,57 +175,56 @@ module reg_cdc_dst #(
         dst_rsp.ready = 0;
     end
 
-    generate
-       if(CDC4Phase) begin: gen_cdc_4phase
+    if(CDC_KIND == "cdc_4phase") begin: gen_cdc_4phase
 
-          cdc_4phase_dst #(.T(req_t)) i_cdc_req_dst (
-            .rst_ni       ( dst_rst_ni    ),
-            .clk_i        ( dst_clk_i     ),
-            .data_o       ( dst_req       ),
-            .valid_o      ( dst_req_valid ),
-            .ready_i      ( dst_req_ready ),
-            .async_req_i  ( async_req_i   ),
-            .async_ack_o  ( async_ack_o   ),
-            .async_data_i ( async_data_i  )
-          );
+       cdc_4phase_dst #(.T(req_t)) i_cdc_req_dst (
+         .rst_ni       ( dst_rst_ni    ),
+         .clk_i        ( dst_clk_i     ),
+         .data_o       ( dst_req       ),
+         .valid_o      ( dst_req_valid ),
+         .ready_i      ( dst_req_ready ),
+         .async_req_i  ( async_req_i   ),
+         .async_ack_o  ( async_ack_o   ),
+         .async_data_i ( async_data_i  )
+       );
 
-          cdc_4phase_src #(.T(rsp_t)) i_cdc_rsp_src (
-            .rst_ni       ( dst_rst_ni    ),
-            .clk_i        ( dst_clk_i     ),
-            .data_i       ( dst_rsp_q     ),
-            .valid_i      ( dst_rsp_valid ),
-            .ready_o      ( dst_rsp_ready ),
-            .async_req_o  ( async_req_o   ),
-            .async_ack_i  ( async_ack_i   ),
-            .async_data_o ( async_data_o  )
-          );
+       cdc_4phase_src #(.T(rsp_t)) i_cdc_rsp_src (
+         .rst_ni       ( dst_rst_ni    ),
+         .clk_i        ( dst_clk_i     ),
+         .data_i       ( dst_rsp_q     ),
+         .valid_i      ( dst_rsp_valid ),
+         .ready_o      ( dst_rsp_ready ),
+         .async_req_o  ( async_req_o   ),
+         .async_ack_i  ( async_ack_i   ),
+         .async_data_o ( async_data_o  )
+       );
 
-       end else begin : gen_cdc_2phase
+    end else if (CDC_KIND == "cdc_2phase") begin : gen_cdc_2phase
 
-          cdc_2phase_dst #(.T(req_t)) i_cdc_req_dst (
-            .rst_ni       ( dst_rst_ni    ),
-            .clk_i        ( dst_clk_i     ),
-            .data_o       ( dst_req       ),
-            .valid_o      ( dst_req_valid ),
-            .ready_i      ( dst_req_ready ),
-            .async_req_i  ( async_req_i   ),
-            .async_ack_o  ( async_ack_o   ),
-            .async_data_i ( async_data_i  )
-          );
+       cdc_2phase_dst #(.T(req_t)) i_cdc_req_dst (
+         .rst_ni       ( dst_rst_ni    ),
+         .clk_i        ( dst_clk_i     ),
+         .data_o       ( dst_req       ),
+         .valid_o      ( dst_req_valid ),
+         .ready_i      ( dst_req_ready ),
+         .async_req_i  ( async_req_i   ),
+         .async_ack_o  ( async_ack_o   ),
+         .async_data_i ( async_data_i  )
+       );
 
-          cdc_2phase_src #(.T(rsp_t)) i_cdc_rsp_src (
-            .rst_ni       ( dst_rst_ni    ),
-            .clk_i        ( dst_clk_i     ),
-            .data_i       ( dst_rsp_q     ),
-            .valid_i      ( dst_rsp_valid ),
-            .ready_o      ( dst_rsp_ready ),
-            .async_req_o  ( async_req_o   ),
-            .async_ack_i  ( async_ack_i   ),
-            .async_data_o ( async_data_o  )
-          );
-
-       end
-    endgenerate
+       cdc_2phase_src #(.T(rsp_t)) i_cdc_rsp_src (
+         .rst_ni       ( dst_rst_ni    ),
+         .clk_i        ( dst_clk_i     ),
+         .data_i       ( dst_rsp_q     ),
+         .valid_i      ( dst_rsp_valid ),
+         .ready_o      ( dst_rsp_ready ),
+         .async_req_o  ( async_req_o   ),
+         .async_ack_i  ( async_ack_i   ),
+         .async_data_o ( async_data_o  )
+       );
+    end else begin : gen_elab_error
+      $error("Unknown CDC_KIND %s", CDC_KIND);
+    end
 
     // In the destination domain we wait for the request data coming in on the
     // CDC domain. Once this happens we forward the request and wait for the
@@ -272,7 +272,7 @@ module reg_cdc_dst #(
 endmodule
 
 module reg_cdc #(
-    parameter logic CDC4Phase = 1'b0,
+    parameter string CDC_KIND = "cdc_2phase",
     parameter type  req_t     = logic,
     parameter type  rsp_t     = logic
 ) (
@@ -292,7 +292,7 @@ module reg_cdc #(
    rsp_t   s_dst_data;
 
    reg_cdc_src #(
-      .CDC4Phase ( CDC4Phase ),
+      .CDC_KIND ( CDC_KIND ),
       .req_t     ( req_t     ),
       .rsp_t     ( rsp_t     )
    ) i_reg_cdc_src (
@@ -311,7 +311,7 @@ module reg_cdc #(
    );
 
    reg_cdc_dst #(
-      .CDC4Phase ( CDC4Phase ),
+      .CDC_KIND ( CDC_KIND ),
       .req_t     ( req_t     ),
       .rsp_t     ( rsp_t     )
    ) i_reg_cdc_dst (
