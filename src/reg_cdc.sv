@@ -12,7 +12,7 @@
 // Florian Zaruba <zarubaf@iis.ee.ethz.ch>
 
 module reg_cdc_src #(
-    parameter string CDC_KIND = "cdc_2phase", // "cdc_2phase" or "cdc_4phase"
+    parameter CDC_KIND = "cdc_2phase", // "cdc_2phase" or "cdc_4phase"
     parameter type  req_t     = logic,
     parameter type  rsp_t     = logic
 ) (
@@ -139,7 +139,7 @@ module reg_cdc_src #(
 endmodule
 
 module reg_cdc_dst #(
-  parameter string CDC_KIND = "cdc_2phase", // "cdc_2phase" or "cdc_4phase"
+  parameter CDC_KIND = "cdc_2phase", // "cdc_2phase" or "cdc_4phase"
   parameter type req_t = logic,
   parameter type rsp_t = logic
 ) (
@@ -272,7 +272,7 @@ module reg_cdc_dst #(
 endmodule
 
 module reg_cdc #(
-    parameter string CDC_KIND = "cdc_2phase",
+    parameter CDC_KIND = "cdc_2phase",
     parameter type  req_t     = logic,
     parameter type  rsp_t     = logic
 ) (
