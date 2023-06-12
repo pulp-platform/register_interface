@@ -7,3 +7,4 @@
 waive --rule=explicit-parameter-storage-type --location="src/prim_subreg.sv"
 waive --rule=explicit-parameter-storage-type --location="src/prim_subreg_arb.sv"
 waive --rule=explicit-parameter-storage-type --location="src/prim_subreg_shadow.sv"
+waive --rule=explicit-parameter-storage-type --location="src/reg_cdc.sv"
