@@ -4,9 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.4.1 - 2023-06-12
+### Added
+- `reg_cut` module that cuts all combinational paths between src and dst
+- Added basic CI tests
+### Changed
+- Added optional parameter to `reg_cdc` to choose between different CDC flavors.
 ### Fixed
 - Fix typo in `reg_filter_empty_writes`.
+- Remove timing loop in `reg_to_tlul`
+- Add option to use 4phase CDC 
 
 ## 0.4.0 - 2023-04-28
 ### Breaking Changes
