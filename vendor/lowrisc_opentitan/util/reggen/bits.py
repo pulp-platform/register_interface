@@ -6,8 +6,8 @@
 
 from typing import Tuple
 
-from .lib import check_str
-from .params import ReggenParams
+from reggen.lib import check_str
+from reggen.params import ReggenParams
 
 
 class Bits:
@@ -85,3 +85,11 @@ class Bits:
         else:
             assert self.lsb < self.msb
             return '{}:{}'.format(self.msb, self.lsb)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Bits):
+            return NotImplemented
+        return (self.lsb == other.lsb) and (self.msb == other.msb)
+
+    def __str__(self) -> str:
+        return '[{}:{}]'.format(self.msb, self.lsb)

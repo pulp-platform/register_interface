@@ -4,24 +4,33 @@
 ${gencmd}
 <%
   def make_blocked_sv_literal(hexstr, randwidth):
-    """This chops the random hexstring into manageable blocks of 64 chars such that the
-    lines do not get too long.
-    """
-    # Make all-caps and drop '0x' preamble
-    hexstr = str(hexstr[2:]).upper()
-    # Block width in hex chars
-    blockwidth = 64
-    remainder = randwidth % (4*blockwidth)
-    numbits = remainder if remainder else 4*blockwidth
-    idx = 0
-    hexblocks = []
-    while randwidth > 0:
-      hexstr = hexstr[idx:]
-      randwidth -= numbits
-      idx = (numbits + 3) // 4
-      hexblocks.append(str(numbits) + "'h" + hexstr[0:idx])
-      numbits = 4*blockwidth
-    return hexblocks
+    """Chop a hex string into blocks of <= 64 digits"""
+    # Convert hexstr to an actual number
+    num = int(hexstr, 16)
+    assert 0 <= num < (1 << randwidth)
+
+    mask = (1 << 256) - 1
+
+    bits_left = randwidth
+    acc = []
+    while bits_left > 0:
+      word = num & mask
+      width = min(256, bits_left)
+
+      num_nibbles = (width + 3) // 4
+      string = "{word:0{num_nibbles}X}".format(word=word, num_nibbles=num_nibbles)
+      # Separate 32-bit words for readability.
+      for i in range(num_nibbles-1, 0, -1):
+            if (num_nibbles - i) % 8 == 0:
+                string = string[:i] + "_" + string[i:]
+      acc.append("{nbits}'h{string}"
+                 .format(string=string,
+                         nbits=width))
+      bits_left -= width
+      num >>= width
+
+    acc.reverse()
+    return acc
 %>
 package top_${top["name"]}_rnd_cnst_pkg;
 

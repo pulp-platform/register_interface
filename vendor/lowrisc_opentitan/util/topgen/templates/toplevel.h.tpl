@@ -2,8 +2,8 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef _TOP_${top["name"].upper()}_H_
-#define _TOP_${top["name"].upper()}_H_
+#ifndef ${helper.header_macro_prefix}_TOP_${top["name"].upper()}_H_
+#define ${helper.header_macro_prefix}_TOP_${top["name"].upper()}_H_
 
 /**
  * @file
@@ -164,6 +164,16 @@ ${helper.pinmux_mio_out.render()}
 ${helper.pinmux_outsel.render()}
 
 /**
+ * Dedicated Pad Selects
+ */
+${helper.direct_pads.render()}
+
+/**
+ * Muxed Pad Selects
+ */
+${helper.muxed_pads.render()}
+
+/**
  * Power Manager Wakeup Signals
  */
 ${helper.pwrmgr_wakeups.render()}
@@ -193,9 +203,19 @@ ${helper.clkmgr_gateable_clocks.render()}
  */
 ${helper.clkmgr_hintable_clocks.render()}
 
+/**
+ * MMIO Region
+ *
+ * MMIO region excludes any memory that is separate from the module
+ * configuration space, i.e. ROM, main SRAM, and flash are excluded but
+ * retention SRAM, spi_device memory, or usbdev memory are included.
+ */
+#define ${helper.mmio.base_addr_name().as_c_define()} ${"0x{:X}u".format(helper.mmio.base_addr)}
+#define ${helper.mmio.size_bytes_name().as_c_define()} ${"0x{:X}u".format(helper.mmio.size_bytes)}
+
 // Header Extern Guard
 #ifdef __cplusplus
 }  // extern "C"
 #endif
 
-#endif  // _TOP_${top["name"].upper()}_H_
+#endif  // ${helper.header_macro_prefix}_TOP_${top["name"].upper()}_H_

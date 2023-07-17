@@ -40,6 +40,22 @@ package top_${top["name"]}_pkg;
 
 % endfor
 
+  // Enumeration of alert modules
+  typedef enum int unsigned {
+% for mod in top["alert_module"]:
+    ${lib.Name.from_snake_case("top_" + top["name"] + "_alert_peripheral_" + mod).as_camel_case()} = ${loop.index},
+% endfor
+    TopEarlgreyAlertPeripheralCount
+  } alert_peripheral_e;
+
+  // Enumeration of alerts
+  typedef enum int unsigned {
+% for alert in top["alert"]:
+    ${lib.Name.from_snake_case("top_" + top["name"] + "_alert_id_" + alert["name"]).as_camel_case()} = ${loop.index},
+% endfor
+    TopEarlgreyAlertIdCount
+  } alert_id_e;
+
   // Enumeration of IO power domains.
   // Only used in ASIC target.
   typedef enum logic [${len(top["pinout"]["banks"]).bit_length()-1}:0] {
@@ -85,6 +101,12 @@ package top_${top["name"]}_pkg;
     ${lib.Name.from_snake_case("dio_count").as_camel_case()} = ${total}
   } dio_e;
 
+  // Enumeration for the types of pads.
+  typedef enum {
+    MioPad,
+    DioPad
+  } pad_type_e;
+
   // Raw MIO/DIO input array indices on chip-level.
   // TODO: Does not account for target specific stubbed/added pads.
   // Need to make a target-specific package for those.
@@ -106,7 +128,27 @@ package top_${top["name"]}_pkg;
     ${lib.Name.from_snake_case("dio_pad_count").as_camel_case()}
   } dio_pad_e;
 
+<%
+    instances = sorted(set(inst for (inst, _), __ in helper.devices()))
+%>\
+  // List of peripheral instantiated in this chip.
+  typedef enum {
+% for inst in instances:
+    ${lib.Name.from_snake_case(f"peripheral_{inst}").as_camel_case()},
+% endfor
+    ${lib.Name.from_snake_case("peripheral_count").as_camel_case()}
+  } peripheral_e;
+
   // TODO: Enumeration for PLIC Interrupt source peripheral.
   // TODO: Enumeration for PLIC Interrupt Ids.
+
+// MACROs for AST analog simulation support
+`ifdef ANALOGSIM
+  `define INOUT_AI input ast_pkg::awire_t
+  `define INOUT_AO output ast_pkg::awire_t
+`else
+  `define INOUT_AI inout
+  `define INOUT_AO inout
+`endif
 
 endpackage

@@ -26,8 +26,11 @@
 % else:
 `include "prim_assert.sv"
 % endif
-`ifdef UVM
-  import uvm_pkg::*;
+
+`ifndef FPV_ON
+  `define REGWEN_PATH tb.dut.${reg_block_path}
+`else
+  `define REGWEN_PATH ${lblock}.${reg_block_path}
 `endif
 
 // Block: ${lblock}
@@ -43,15 +46,23 @@ module ${mod_base}_csr_assert_fpv import tlul_pkg::*;
 <%
   addr_width = rb.get_addr_width()
   addr_msb  = addr_width - 1
-  hro_regs_list = [r for r in rb.flat_regs if not r.hwaccess.allows_write()]
+  hro_regs_list = [r for r in rb.flat_regs if (not r.is_hw_writable() and not r.shadowed)]
   num_hro_regs = len(hro_regs_list)
   hro_map = {r.offset: (idx, r) for idx, r in enumerate(hro_regs_list)}
+  max_reg_addr = rb.flat_regs[-1].offset
+  windows = rb.windows
 %>\
+
+`ifdef UVM
+  import uvm_pkg::*;
+`endif
 
 // Currently FPV csr assertion only support HRO registers.
 % if num_hro_regs > 0:
 `ifndef VERILATOR
 `ifndef SYNTHESIS
+
+  logic oob_addr_err;
 
   parameter bit[3:0] MAX_A_SOURCE = 10; // used for FPV only to reduce runtime
 
@@ -72,8 +83,8 @@ module ${mod_base}_csr_assert_fpv import tlul_pkg::*;
   assign a_mask_bit[23:16] = h2d.a_mask[2] ? '1 : '0;
   assign a_mask_bit[31:24] = h2d.a_mask[3] ? '1 : '0;
 
-  bit [${addr_msb}-2:0] hro_idx; // index for exp_vals
-  bit [${addr_msb}:0]   normalized_addr;
+  bit [${addr_msb}:0] hro_idx; // index for exp_vals
+  bit [${addr_msb}:0] normalized_addr;
 
   // Map register address with hro_idx in exp_vals array.
   always_comb begin: decode_hro_addr_to_idx
@@ -82,7 +93,7 @@ module ${mod_base}_csr_assert_fpv import tlul_pkg::*;
       ${r.offset}: hro_idx <= ${idx};
 % endfor
       // If the register is not a HRO register, the write data will all update to this default idx.
-      default: hro_idx <= ${num_hro_regs + 1};
+      default: hro_idx <= ${num_hro_regs};
     endcase
   end
 
@@ -95,31 +106,72 @@ module ${mod_base}_csr_assert_fpv import tlul_pkg::*;
     pend_item_t [2**TL_AIW-1:0] pend_trans;
   `endif
 
-  // normalized address only take the [${addr_msb}:2] address from the TLUL a_address
+  // Word-align the incoming TLUL a_address to obtain the normalized address.
+% if addr_msb > 2:
   assign normalized_addr = {h2d.a_address[${addr_msb}:2], 2'b0};
+% else:
+  assign normalized_addr = '0;
+% endif
 
 % if num_hro_regs > 0:
+  // Assign regwen to registers. If the register does not have regwen, it will default to value 1.
+  logic [${num_hro_regs}-1:0] regwen;
+  % for hro_reg in hro_regs_list:
+<% regwen = hro_reg.regwen %>\
+    % if regwen == None:
+      assign regwen[${hro_map.get(hro_reg.offset)[0]}] = 1;
+    % else:
+      assign regwen[${hro_map.get(hro_reg.offset)[0]}] = `REGWEN_PATH.${regwen.lower()}_qs;
+    % endif
+  % endfor
+
+  typedef enum bit {
+    FpvDefault,
+    FpvRw0c
+  } fpv_reg_access_e;
+  fpv_reg_access_e access_policy [${num_hro_regs}];
+
   // for write HRO registers, store the write data into exp_vals
   always_ff @(negedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
+       oob_addr_err <= 1'b0;
        pend_trans <= '0;
   % for hro_reg in hro_regs_list:
-       exp_vals[${hro_map.get(hro_reg.offset)[0]}] <= ${hro_reg.resval};
+       exp_vals[${hro_map.get(hro_reg.offset)[0]}] <= 'h${f'{hro_reg.resval:0x}'};
+      % if len(hro_reg.fields) == 1 and hro_reg.fields[0].swaccess.key.lower() == "rw0c":
+       access_policy[${hro_map.get(hro_reg.offset)[0]}] <= FpvRw0c;
+      % else:
+       access_policy[${hro_map.get(hro_reg.offset)[0]}] <= FpvDefault;
+      % endif
   % endfor
     end else begin
+      oob_addr_err <= 1'b0;
       if (h2d.a_valid && d2h.a_ready) begin
-        pend_trans[h2d.a_source].addr <= normalized_addr;
-        if (h2d.a_opcode inside {PutFullData, PutPartialData}) begin
-          pend_trans[h2d.a_source].wr_data <= h2d.a_data & a_mask_bit;
-          pend_trans[h2d.a_source].wr_pending <= 1'b1;
-        end else if (h2d.a_opcode == Get) begin
-          pend_trans[h2d.a_source].rd_pending <= 1'b1;
+        if ((normalized_addr inside {[0:${max_reg_addr}]})
+ % for window in windows:
+            || (normalized_addr inside {[${window.offset}: (${window.offset}+${window.items}*8)]})
+ % endfor
+           ) begin
+          pend_trans[h2d.a_source].addr <= normalized_addr;
+          if (h2d.a_opcode inside {PutFullData, PutPartialData}) begin
+            pend_trans[h2d.a_source].wr_data <= h2d.a_data & a_mask_bit;
+            pend_trans[h2d.a_source].wr_pending <= 1'b1;
+          end else if (h2d.a_opcode == Get) begin
+            pend_trans[h2d.a_source].rd_pending <= 1'b1;
+          end
+        end else begin
+          oob_addr_err <= 1'b1;
         end
       end
       if (d2h.d_valid) begin
         if (pend_trans[d2h.d_source].wr_pending == 1) begin
-          if (!d2h.d_error) begin
-            exp_vals[hro_idx] <= pend_trans[d2h.d_source].wr_data;
+          if (!d2h.d_error && regwen[hro_idx]) begin
+            if (access_policy[hro_idx] == FpvRw0c) begin
+              // Assume FpvWr0c policy only has one field that is wr0c.
+              exp_vals[hro_idx] <= exp_vals[hro_idx][0] == 0 ? 0 : pend_trans[d2h.d_source].wr_data;
+            end else begin
+              exp_vals[hro_idx] <= pend_trans[d2h.d_source].wr_data;
+            end
           end
           pend_trans[d2h.d_source].wr_pending <= 1'b0;
         end
@@ -136,12 +188,12 @@ module ${mod_base}_csr_assert_fpv import tlul_pkg::*;
     r_name       = hro_reg.name.lower()
     reg_addr     = hro_reg.offset
     reg_addr_hex = format(reg_addr, 'x')
-    regwen       = hro_reg.regwen
     reg_mask     = 0
+    f_size       = len(hro_reg.fields)
 
     for f in hro_reg.get_field_list():
       f_access = f.swaccess.key.lower()
-      if f_access == "rw" and regwen == None:
+      if f_access == "rw" or (f_access == "rw0c" and f_size == 1):
         reg_mask = reg_mask | f.bits.bitmask()
 %>\
     % if reg_mask != 0:
@@ -154,6 +206,8 @@ module ${mod_base}_csr_assert_fpv import tlul_pkg::*;
     % endif
   % endfor
 % endif
+
+  `ASSERT(TlulOOBAddrErr_A, oob_addr_err |-> s_eventually(d2h.d_valid && d2h.d_error))
 
   // This FPV only assumption is to reduce the FPV runtime.
   `ASSUME_FPV(TlulSource_M, h2d.a_source >=  0 && h2d.a_source <= MAX_A_SOURCE, clk_i, !rst_ni)
@@ -173,5 +227,7 @@ module ${mod_base}_csr_assert_fpv import tlul_pkg::*;
 `endif
 % endif
 endmodule
+
+`undef REGWEN_PATH
 </%def>\
 ${construct_classes(block)}

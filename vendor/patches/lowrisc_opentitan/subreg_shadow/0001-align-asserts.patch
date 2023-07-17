@@ -1,0 +1,25 @@
+From 8af3c568a78c523d6187a0be9ac059621673d0dc Mon Sep 17 00:00:00 2001
+From: Michael Rogenmoser <michael@rogenmoser.us>
+Date: Mon, 17 Jul 2023 19:27:34 +0200
+Subject: [PATCH] align asserts
+
+---
+ prim_subreg_shadow.sv | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/prim_subreg_shadow.sv b/prim_subreg_shadow.sv
+index 5cdbd6f86..0504f660f 100644
+--- a/prim_subreg_shadow.sv
++++ b/prim_subreg_shadow.sv
+@@ -4,7 +4,7 @@
+ //
+ // Shadowed register slice conforming to Comportibility guide.
+ 
+-`include "prim_assert.sv"
++`include "common_cells/assertions.svh"
+ 
+ module prim_subreg_shadow
+   import prim_subreg_pkg::*;
+-- 
+2.31.1
+

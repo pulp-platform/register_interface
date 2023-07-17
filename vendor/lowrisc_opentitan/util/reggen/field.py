@@ -4,12 +4,14 @@
 
 from typing import Dict, List, Optional
 
-from .access import SWAccess, HWAccess
-from .bits import Bits
-from .enum_entry import EnumEntry
-from .lib import (check_keys, check_str, check_name,
-                  check_list, check_str_list, check_xint)
-from .params import ReggenParams
+from design.mubi import prim_mubi  # type: ignore
+
+from reggen.access import SWAccess, HWAccess
+from reggen.bits import Bits
+from reggen.enum_entry import EnumEntry
+from reggen.lib import (check_keys, check_str, check_name, check_bool,
+                        check_list, check_str_list, check_xint)
+from reggen.params import ReggenParams
 
 REQUIRED_FIELDS = {
     'bits': ['b', "bit or bit range (msb:lsb)"]
@@ -17,7 +19,15 @@ REQUIRED_FIELDS = {
 
 OPTIONAL_FIELDS = {
     'name': ['s', "name of the field"],
-    'desc': ['t', "description of field (required if the field has a name)"],
+    'desc': [
+        't',
+        "description of field (required if the field has a name). "
+        "This field supports the markdown syntax."
+    ],
+    'alias_target': [
+        's',
+        "name of the field to apply the alias definition to."
+    ],
     'swaccess': [
         's', "software access permission, copied from "
         "register if not provided in field. "
@@ -25,7 +35,13 @@ OPTIONAL_FIELDS = {
     ],
     'hwaccess': [
         's', "hardware access permission, copied from "
-        "register if not prvided in field. "
+        "register if not provided in field. "
+        "(Tool adds if not provided.)"
+    ],
+    'hwqe': [
+        'b', "'true' if hardware uses 'q' enable signal, "
+        "which is latched signal of software write pulse. "
+        "Copied from register if not provided in field. "
         "(Tool adds if not provided.)"
     ],
     'resval': [
@@ -39,6 +55,17 @@ OPTIONAL_FIELDS = {
     'tags': [
         's',
         "tags for the field, followed by the format 'tag_name:item1:item2...'"
+    ],
+    'mubi': [
+        'b',
+        "boolean flag for whether the field is a multi-bit type"
+    ],
+    'auto_split': [
+        'b',
+        "boolean flag which determines whether the field "
+        "should be automatically separated into 1-bit sub-fields."
+        "This flag is used as a hint for automatically generated "
+        "software headers with register description."
     ]
 }
 
@@ -46,25 +73,29 @@ OPTIONAL_FIELDS = {
 class Field:
     def __init__(self,
                  name: str,
+                 alias_target: Optional[str],
                  desc: Optional[str],
                  tags: List[str],
                  swaccess: SWAccess,
                  hwaccess: HWAccess,
                  hwqe: bool,
-                 hwre: bool,
                  bits: Bits,
                  resval: Optional[int],
-                 enum: Optional[List[EnumEntry]]):
+                 enum: Optional[List[EnumEntry]],
+                 mubi: bool,
+                 auto_split: bool):
         self.name = name
+        self.alias_target = alias_target
         self.desc = desc
         self.tags = tags
         self.swaccess = swaccess
         self.hwaccess = hwaccess
         self.hwqe = hwqe
-        self.hwre = hwre
         self.bits = bits
         self.resval = resval
         self.enum = enum
+        self.mubi = mubi
+        self.auto_split = auto_split
 
     @staticmethod
     def from_raw(reg_name: str,
@@ -74,9 +105,11 @@ class Field:
                  default_hwaccess: HWAccess,
                  reg_resval: Optional[int],
                  reg_width: int,
-                 reg_hwqe: bool,
-                 reg_hwre: bool,
                  params: ReggenParams,
+                 hwext: bool,
+                 default_hwqe: bool,
+                 shadowed: bool,
+                 is_alias: bool,
                  raw: object) -> 'Field':
         where = 'field {} of {} register'.format(field_idx, reg_name)
         rd = check_keys(raw, where,
@@ -89,6 +122,15 @@ class Field:
                     if num_fields > 1 else reg_name)
         else:
             name = check_name(raw_name, 'name of {}'.format(where))
+
+        alias_target = None
+        if rd.get('alias_target') is not None:
+            if is_alias:
+                alias_target = check_name(rd.get('alias_target'),
+                                          'name of alias target register')
+            else:
+                raise ValueError('Field {} may not have an alias_target key.'
+                                 .format(name))
 
         raw_desc = rd.get('desc')
         if raw_desc is None and raw_name is not None:
@@ -114,16 +156,45 @@ class Field:
         else:
             hwaccess = default_hwaccess
 
-        bits = Bits.from_raw(where, reg_width, params, rd['bits'])
+        raw_hwqe = rd.get('hwqe', default_hwqe)
+        hwqe = check_bool(raw_hwqe, 'hwqe field for {}'.format(where))
+        raw_mubi = rd.get('mubi', False)
+        is_mubi = check_bool(raw_mubi, 'mubi field for {}'.format(where))
+        raw_auto_split = rd.get('auto_split', False)
+        is_auto_split = check_bool(raw_auto_split, 'auto_split field for {}'.format(where))
 
+        # Currently internal shadow registers do not support hw write type
+        if not hwext and shadowed and hwaccess.allows_write():
+            raise ValueError('Internal Shadow registers do not currently support '
+                             'hardware write')
+
+        bits = Bits.from_raw(where, reg_width, params, rd['bits'])
         raw_resval = rd.get('resval')
+        if is_mubi:
+            # When mubi type, the resval supplied is a boolean which is converted
+            # to a mubi value
+            chk_resval = check_bool(raw_resval, 'resval field for {}'.format(where))
+
+            # Check mubi width is supported
+            if not prim_mubi.is_width_valid(bits.width()):
+                raise ValueError(f'mubi field for {name} does not support width '
+                                 f'of {bits.width()}')
+
+            # Get actual integer value based on mubi selection
+            raw_resval = prim_mubi.mubi_value_as_int(chk_resval, bits.width())
+
         if raw_resval is None:
             # The field doesn't define a reset value. Use bits from reg_resval
-            # if it's defined, otherwise None (which means "x").
-            if reg_resval is None:
+            # if it's defined. If not, we assume that a hwext register comes up
+            # as "x" (because the reggen code doesn't have any way to predict
+            # it). That's represented as None. A non-hwext register is reset to
+            # zero.
+            if reg_resval is not None:
+                resval = bits.extract_field(reg_resval)  # type: Optional[int]
+            elif hwext:
                 resval = None
             else:
-                resval = bits.extract_field(reg_resval)
+                resval = 0
         else:
             # The field does define a reset value. It should be an integer or
             # 'x'. In the latter case, we set resval to None (as above).
@@ -177,15 +248,14 @@ class Field:
                 enum.append(entry)
                 enum_val_to_name[entry.value] = entry.name
 
-        return Field(name, desc, tags,
-                     swaccess, hwaccess,
-                     reg_hwqe, reg_hwre, bits, resval, enum)
+        return Field(name, alias_target, desc, tags, swaccess, hwaccess,
+                     hwqe, bits, resval, enum, is_mubi, is_auto_split)
 
     def has_incomplete_enum(self) -> bool:
         return (self.enum is not None and
                 len(self.enum) != 1 + self.bits.max_value())
 
-    def get_n_bits(self, hwext: bool, bittype: List[str]) -> int:
+    def get_n_bits(self, hwext: bool, hwre: bool, bittype: List[str]) -> int:
         '''Get the size of this field in bits
 
         bittype should be a list of the types of signals to count. The elements
@@ -196,12 +266,6 @@ class Field:
 
         - 'd': A signal for the next value of the field. Only needed if HW can
           write its contents.
-
-        - 'qe': A write enable signal for bus accesses. Only needed if HW can
-          read the field's contents and the field has the hwqe flag.
-
-        - 're': A read enable signal for bus accesses. Only needed if HW can
-          read the field's contents and the field has the hwre flag.
 
         - 'de': A write enable signal for hardware accesses. Only needed if HW
           can write the field's contents and the register data is stored in the
@@ -216,7 +280,7 @@ class Field:
         if "qe" in bittype and self.hwaccess.allows_read():
             n_bits += int(self.hwqe)
         if "re" in bittype and self.hwaccess.allows_read():
-            n_bits += int(self.hwre)
+            n_bits += int(hwre)
         if "de" in bittype and self.hwaccess.allows_write():
             n_bits += int(not hwext)
         return n_bits
@@ -250,15 +314,20 @@ class Field:
         ret = []
         for reg_idx in range(min_reg_idx, max_reg_idx + 1):
             name = '{}_{}'.format(self.name, reg_idx)
+            # In case this is an alias register, we need to make sure that
+            # the alias_target name is expanded as well.
+            alias_target = None
+            if self.alias_target is not None:
+                alias_target = '{}_{}'.format(self.alias_target, reg_idx)
 
             bit_offset = field_width * (reg_idx - min_reg_idx)
             bits = (self.bits
                     if bit_offset == 0
                     else self.bits.make_translated(bit_offset))
 
-            ret.append(Field(name, desc,
-                             self.tags, self.swaccess, self.hwaccess,
-                             self.hwqe, self.hwre, bits, self.resval, enum))
+            ret.append(Field(name, alias_target, desc,
+                             self.tags, self.swaccess, self.hwaccess, self.hwqe,
+                             bits, self.resval, enum, self.mubi, self.auto_split))
 
         return ret
 
@@ -270,9 +339,13 @@ class Field:
                 if stripped else self.desc)
         enum = None if stripped else self.enum
 
-        return Field(self.name + suffix,
-                     desc, self.tags, self.swaccess, self.hwaccess,
-                     self.hwqe, self.hwre, self.bits, self.resval, enum)
+        alias_target = None
+        if self.alias_target is not None:
+            alias_target = self.alias_target + suffix
+
+        return Field(self.name + suffix, alias_target,
+                     desc, self.tags, self.swaccess, self.hwaccess, self.hwqe,
+                     self.bits, self.resval, enum, self.mubi, self.auto_split)
 
     def _asdict(self) -> Dict[str, object]:
         rd = {
@@ -288,4 +361,53 @@ class Field:
             rd['desc'] = self.desc
         if self.enum is not None:
             rd['enum'] = self.enum
+        if self.alias_target is not None:
+            rd['alias_target'] = self.alias_target
         return rd
+
+    def sw_readable(self) -> bool:
+        return self.swaccess.key not in ['wo', 'r0w1c']
+
+    def sw_writable(self) -> bool:
+        return self.swaccess.key != 'ro'
+
+    def apply_alias(self, alias_field: 'Field', where: str) -> None:
+        '''Compare all attributes and replace overridable values.
+
+        This updates the overridable field attributes with the alias values and
+        ensures that all non-overridable attributes have identical values.
+        '''
+
+        # Attributes to be crosschecked
+        attrs = ['bits', 'swaccess', 'hwaccess', 'hwqe', 'mubi']
+        for attr in attrs:
+            if getattr(self, attr) != getattr(alias_field, attr):
+                raise ValueError('Value mismatch for attribute {} between '
+                                 'alias field {} and field {} in {}.'
+                                 .format(attr, self.name,
+                                         alias_field.name, where))
+
+        # These attributes can be overridden by the aliasing mechanism.
+        self.name = alias_field.name
+        self.desc = alias_field.desc
+        self.enum = alias_field.enum
+        self.resval = alias_field.resval
+        self.tags = alias_field.tags
+        # We also keep track of the alias_target when overriding attributes.
+        # This gives us a way to check whether a register has been overridden
+        # or not, and what the name of the original register was.
+        self.alias_target = alias_field.alias_target
+
+    def scrub_alias(self, where: str) -> None:
+        '''Replaces sensitive fields in field with generic names
+
+        This function can be used to create the generic field descriptions
+        from full alias hjson definitions.
+        '''
+        # These attributes are scrubbed. Note that the name is scrubbed in
+        # register.py already.
+        self.desc = ''
+        self.enum = []
+        self.resval = 0
+        self.tags = []
+        self.alias_target = None

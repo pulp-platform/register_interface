@@ -13,25 +13,27 @@ import warnings
 from typing import List, Optional, Set, TextIO
 
 
-from .field import Field
-from .ip_block import IpBlock
-from .params import LocalParam
-from .register import Register
-from .multi_register import MultiRegister
-from .signal import Signal
-from .window import Window
+from reggen.field import Field
+from reggen.ip_block import IpBlock
+from reggen.params import LocalParam
+from reggen.register import Register
+from reggen.multi_register import MultiRegister
+from reggen.signal import Signal
+from reggen.window import Window
 
 
 def genout(outfile: TextIO, msg: str) -> None:
     outfile.write(msg)
 
+
 def to_snake_case(s: str) -> str:
     val = []
     for i, ch in enumerate(s):
-      if i > 0 and ch.isupper():
-        val.append('_')
-      val.append(ch)
+        if i > 0 and ch.isupper():
+            val.append('_')
+        val.append(ch)
     return ''.join(val)
+
 
 def as_define(s: str) -> str:
     s = s.upper()
@@ -43,7 +45,9 @@ def as_define(s: str) -> str:
 
 def first_line(s: str) -> str:
     """Returns the first line of a multi-line string"""
-    return s.splitlines()[0]
+
+    # Just return the 's' if it is empty or 'None'.
+    return s.splitlines()[0] if s else s
 
 
 def format_comment(s: str) -> str:
@@ -114,6 +118,9 @@ def gen_cdefine_register(outstr: TextIO,
                          width: int,
                          rnames: Set[str],
                          existing_defines: Set[str]) -> None:
+    def uint_literal(n: int) -> str:
+        return hex(n) + 'u'
+
     rname = reg.name
     offset = reg.offset
 
@@ -122,6 +129,10 @@ def gen_cdefine_register(outstr: TextIO,
     genout(
         outstr,
         gen_define(defname + '_REG_OFFSET', [], hex(offset), existing_defines))
+    genout(
+        outstr,
+        gen_define(defname + '_REG_RESVAL', [],
+                   uint_literal(reg.resval), existing_defines))
 
     for field in reg.fields:
         dname = defname + '_' + as_define(field.name)
@@ -139,7 +150,7 @@ def gen_cdefine_register(outstr: TextIO,
                 mask = field.bits.bitmask() >> field.bits.lsb
                 genout(
                     outstr,
-                    gen_define(dname + '_MASK', [], hex(mask),
+                    gen_define(dname + '_MASK', [], uint_literal(mask),
                                existing_defines))
                 genout(
                     outstr,
@@ -199,7 +210,7 @@ def gen_cdefines_module_param(outstr: TextIO,
                               existing_defines: Set[str]) -> None:
     # Presently there is only one type (int), however if the new types are
     # added, they potentially need to be handled differently.
-    known_types = ["int"]
+    known_types = ["int", "int unsigned"]
     if param.param_type not in known_types:
         warnings.warn("Cannot generate a module define of type {}"
                       .format(param.param_type))
@@ -211,7 +222,7 @@ def gen_cdefines_module_param(outstr: TextIO,
     # otherwise, assume StudlyCaps and covert it to snake_case.
     param_name = param.name if '_' in param.name else to_snake_case(param.name)
     define_name = as_define(module_name + '_PARAM_' + param_name)
-    if param.param_type == "int":
+    if param.param_type == "int" or param.param_type == "int unsigned":
         define = gen_define(define_name, [], param.value,
                             existing_defines)
 
@@ -238,20 +249,17 @@ def gen_cdefines_module_params(outstr: TextIO,
 
 def gen_multireg_field_defines(outstr: TextIO,
                                regname: str,
-                               field: Field,
+                               fields: List[Field],
                                subreg_num: int,
                                regwidth: int,
                                existing_defines: Set[str]) -> None:
-    field_width = field.bits.width()
-    fields_per_reg = regwidth // field_width
 
-    define_name = regname + '_' + as_define(field.name + "_FIELD_WIDTH")
-    define = gen_define(define_name, [], str(field_width), existing_defines)
-    genout(outstr, define)
+    for each_field in fields:
+        field_width = each_field.bits.width()
 
-    define_name = regname + '_' + as_define(field.name + "_FIELDS_PER_REG")
-    define = gen_define(define_name, [], str(fields_per_reg), existing_defines)
-    genout(outstr, define)
+        define_name = regname + '_' + as_define(each_field.name + "_FIELD_WIDTH")
+        define = gen_define(define_name, [], str(field_width), existing_defines)
+        genout(outstr, define)
 
     define_name = regname + "_MULTIREG_COUNT"
     define = gen_define(define_name, [], str(subreg_num), existing_defines)
@@ -268,12 +276,12 @@ def gen_cdefine_multireg(outstr: TextIO,
                          existing_defines: Set[str]) -> None:
     comment = multireg.reg.desc + " (common parameters)"
     genout(outstr, format_comment(first_line(comment)))
-    if len(multireg.reg.fields) == 1:
+    if len(multireg.reg.fields) >= 1:
         regname = as_define(component + '_' + multireg.reg.name)
-        gen_multireg_field_defines(outstr, regname, multireg.reg.fields[0],
+        gen_multireg_field_defines(outstr, regname, multireg.reg.fields,
                                    len(multireg.regs), regwidth, existing_defines)
     else:
-        log.warn("Non-homogeneous multireg " + multireg.reg.name +
+        log.warn("Fieldless multireg " + multireg.reg.name +
                  " skip multireg specific data generation.")
 
     for subreg in multireg.regs:

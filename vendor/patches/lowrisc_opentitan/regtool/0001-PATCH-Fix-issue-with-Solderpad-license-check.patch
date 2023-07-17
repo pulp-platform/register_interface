@@ -1,17 +1,17 @@
-From ffc9d9c18df0e12fb910243888aea3db77442e8d Mon Sep 17 00:00:00 2001
-From: Luca Colagrande <bigcola.96@gmail.com>
-Date: Tue, 9 Nov 2021 18:36:19 +0100
-Subject: [PATCH] Fix issue with Solderpad license check
+From 2949fcbc707604e28c35b03c6993d82064270dc8 Mon Sep 17 00:00:00 2001
+From: Michael Rogenmoser <michael@rogenmoser.us>
+Date: Mon, 17 Jul 2023 14:58:46 +0200
+Subject: [PATCH] [PATCH] Fix issue with Solderpad license check
 
 ---
  regtool.py | 5 ++++-
  1 file changed, 4 insertions(+), 1 deletion(-)
 
 diff --git a/regtool.py b/regtool.py
-index aa264c5..76268c9 100755
+index ccce88f66..b3f8959b2 100755
 --- a/regtool.py
 +++ b/regtool.py
-@@ -218,7 +218,10 @@ def main():
+@@ -292,7 +292,10 @@ def main():
          if found_lunder:
              src_lic = found_lunder
          if found_spdx:
@@ -22,7 +22,7 @@ index aa264c5..76268c9 100755
 +                src_lic += '\n' + found_spdx
  
          with outfile:
-             if format == 'html':
+             if fmt == 'registers':
 -- 
-2.16.5
+2.31.1
 

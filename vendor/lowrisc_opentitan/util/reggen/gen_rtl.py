@@ -11,10 +11,11 @@ from mako import exceptions  # type: ignore
 from mako.template import Template  # type: ignore
 from pkg_resources import resource_filename
 
-from .ip_block import IpBlock
-from .multi_register import MultiRegister
-from .reg_base import RegBase
-from .register import Register
+from reggen.ip_block import IpBlock
+from reggen.lib import check_int
+from reggen.multi_register import MultiRegister
+from reggen.reg_base import RegBase
+from reggen.register import Register
 
 
 def escape_name(name: str) -> str:
@@ -97,22 +98,29 @@ def gen_rtl(block: IpBlock, outdir: str) -> int:
     reg_pkg_tpl = Template(
         filename=resource_filename('reggen', 'reg_pkg.sv.tpl'))
 
+    # In case the generated package contains alias definitions, we add
+    # the alias implementation identifier to the package name so that it
+    # becomes unique.
+    alias_impl = "_" + block.alias_impl if block.alias_impl else ""
+
     # Generate <block>_reg_pkg.sv
     #
     # This defines the various types used to interface between the *_reg_top
     # module(s) and the block itself.
-    reg_pkg_path = os.path.join(outdir, block.name.lower() + "_reg_pkg.sv")
+    reg_pkg_path = os.path.join(outdir, block.name.lower() + alias_impl +
+                                "_reg_pkg.sv")
     with open(reg_pkg_path, 'w', encoding='UTF-8') as fout:
         try:
-            fout.write(reg_pkg_tpl.render(block=block))
+            fout.write(reg_pkg_tpl.render(block=block,
+                                          alias_impl=alias_impl))
         except:  # noqa F722 for template Exception handling
             log.error(exceptions.text_error_template().render())
             return 1
 
     # Generate the register block implementation(s). For a device interface
-    # with no name we generate the register module "<block>_reg_top" (writing
-    # to <block>_reg_top.sv). In any other case, we also need the interface
-    # name, giving <block>_<ifname>_reg_top.
+    # with no name we generate the register module "<block>_reg_top"
+    # (writing to <block>_reg_top.sv). In any other case, we also need the
+    # interface name, giving <block>_<ifname>_reg_top.
     lblock = block.name.lower()
     for if_name, rb in block.reg_blocks.items():
         if if_name is None:
@@ -120,7 +128,7 @@ def gen_rtl(block: IpBlock, outdir: str) -> int:
         else:
             mod_base = lblock + '_' + if_name.lower()
 
-        mod_name = mod_base + '_reg_top'
+        mod_name = mod_base + alias_impl + '_reg_top'
         reg_top_path = os.path.join(outdir, mod_name + '.sv')
         with open(reg_top_path, 'w', encoding='UTF-8') as fout:
             try:
@@ -134,3 +142,25 @@ def gen_rtl(block: IpBlock, outdir: str) -> int:
                 return 1
 
     return 0
+
+
+def render_param(dst_type: str, value: str) -> str:
+    '''Render a parameter value as used for the destination type
+
+    The value is itself a string but we have already checked that if dst_type
+    happens to be "int" or "int unsigned" then it can be parsed as an integer.
+
+    If dst_type is "int unsigned" and the value is larger than 2^31 then
+    explicitly generate a 32-bit hex value. This allows 32-bit literals whose
+    top bits are set (which can't be written as bare integers in SystemVerilog
+    without warnings, because those are interpreted as ints).
+
+    '''
+    if dst_type == 'int unsigned':
+        # This shouldn't fail because we've already checked it in
+        # _parse_parameter in params.py
+        int_val = check_int(value, "integer parameter")
+        if int_val >= (1 << 31):
+            return "32'h{:08x}".format(int_val)
+
+    return value

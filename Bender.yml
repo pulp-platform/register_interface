@@ -14,8 +14,7 @@ export_include_dirs:
 sources:
   # Level 0
   - src/reg_intf.sv
-  - vendor/lowrisc_opentitan/src/prim_subreg_arb.sv
-  - vendor/lowrisc_opentitan/src/prim_subreg_ext.sv
+  - vendor/lowrisc_opentitan/src/prim_subreg_pkg.sv
   # Level 1
   - src/apb_to_reg.sv
   - src/axi_to_reg.sv
@@ -30,10 +29,12 @@ sources:
   - src/reg_to_mem.sv
   - src/reg_uniform.sv
   - src/reg_to_tlul.sv
-  - vendor/lowrisc_opentitan/src/prim_subreg_shadow.sv
-  - vendor/lowrisc_opentitan/src/prim_subreg.sv
+  - vendor/lowrisc_opentitan/src/prim_subreg_arb.sv
+  - vendor/lowrisc_opentitan/src/prim_subreg_ext.sv
   # Level 2
   - src/axi_lite_to_reg.sv
+  - vendor/lowrisc_opentitan/src/prim_subreg_shadow.sv
+  - vendor/lowrisc_opentitan/src/prim_subreg.sv
   - target: test
     files:
       - src/reg_test.sv
@@ -46,7 +47,7 @@ sources:
 vendor_package:
   - name: lowrisc_opentitan
     target_dir: "vendor/lowrisc_opentitan"
-    upstream: { git: "https://github.com/lowRISC/opentitan.git", rev: "47a0f4798febd9e53dd131ef8c8c2b0255d8c139" }
+    upstream: { git: "https://github.com/lowRISC/opentitan.git", rev: "21ce4e9761abdf5c919b46e5ae64a5a8e24992f7" } # Earlgrey-M2.5.2-RC0
     exclude_from_upstream:
       - "ci/*"
     patch_dir: "vendor/patches/lowrisc_opentitan"
@@ -54,7 +55,9 @@ vendor_package:
       - {from: 'util/regtool.py', to: 'util/regtool.py', patch_dir: 'regtool'}
       - {from: 'util/reggen', to: 'util/reggen', patch_dir: 'reggen'}
       - {from: 'util/topgen', to: 'util/topgen'}
+      - {from: 'util/design/mubi/prim_mubi.py', to: 'util/design/mubi/prim_mubi.py'}
+      - {from: 'hw/ip/prim/rtl/prim_subreg_pkg.sv', to: 'src/prim_subreg_pkg.sv' }
       - {from: 'hw/ip/prim/rtl/prim_subreg.sv', to: 'src/prim_subreg.sv' }
       - {from: 'hw/ip/prim/rtl/prim_subreg_arb.sv', to: 'src/prim_subreg_arb.sv' }
       - {from: 'hw/ip/prim/rtl/prim_subreg_ext.sv', to: 'src/prim_subreg_ext.sv' }
-      - {from: 'hw/ip/prim/rtl/prim_subreg_shadow.sv', to: 'src/prim_subreg_shadow.sv' }
+      - {from: 'hw/ip/prim/rtl/prim_subreg_shadow.sv', to: 'src/prim_subreg_shadow.sv', patch_dir: 'subreg_shadow' }

@@ -1,6 +1,6 @@
-From 14ad9afbb9d13f19c34344b3c2005511bb147edf Mon Sep 17 00:00:00 2001
+From 0679cb70dedf3841cab53a3eed123a38e15487a5 Mon Sep 17 00:00:00 2001
 From: Michael Rogenmoser <michael@rogenmoser.us>
-Date: Thu, 5 Jan 2023 17:39:17 +0100
+Date: Mon, 17 Jul 2023 17:02:55 +0200
 Subject: [PATCH] Select appropriate address range
 
 ---
@@ -8,10 +8,10 @@ Subject: [PATCH] Select appropriate address range
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/reg_top.sv.tpl b/reg_top.sv.tpl
-index 664e12801..56ff205c4 100644
+index c859e02e3..fe529c69e 100644
 --- a/reg_top.sv.tpl
 +++ b/reg_top.sv.tpl
-@@ -116,7 +116,7 @@ module ${mod_name} \
+@@ -201,7 +201,7 @@ module ${mod_name} \
    // register signals
    logic           reg_we;
    logic           reg_re;
@@ -20,7 +20,7 @@ index 664e12801..56ff205c4 100644
    logic [DW-1:0]  reg_wdata;
    logic [DBW-1:0] reg_be;
    logic [DW-1:0]  reg_rdata;
-@@ -316,7 +316,7 @@ module ${mod_name} \
+@@ -457,7 +457,7 @@ $ endif
  % if use_reg_iface:
    assign reg_we = reg_intf_req.valid & reg_intf_req.write;
    assign reg_re = reg_intf_req.valid & ~reg_intf_req.write;
