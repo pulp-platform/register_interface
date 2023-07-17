@@ -74,4 +74,3 @@ package test_regs_reg_pkg;
   };
 
 endpackage
-

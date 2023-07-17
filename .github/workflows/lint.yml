@@ -36,7 +36,7 @@ jobs:
     name: Vendor Up-to-Date
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Install bender
         run: curl --proto '=https' --tlsv1.2 https://pulp-platform.github.io/bender/init -sSf | sh -s -- 0.26.0
       - name: Re-vendor and diff

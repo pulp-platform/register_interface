@@ -14,6 +14,8 @@ module test_regs_reg_top #(
 ) (
   input logic clk_i,
   input logic rst_ni,
+  input logic clk_alt_i,
+  input logic rst_alt_ni,
   input  reg_req_t reg_req_i,
   output reg_rsp_t reg_rsp_o,
   // To HW
@@ -42,15 +44,16 @@ module test_regs_reg_top #(
   logic          addrmiss, wr_err;
 
   logic [DW-1:0] reg_rdata_next;
+  logic reg_busy;
 
   // Below register interface can be changed
   reg_req_t  reg_intf_req;
   reg_rsp_t  reg_intf_rsp;
 
 
+
   assign reg_intf_req = reg_req_i;
   assign reg_rsp_o = reg_intf_rsp;
-
 
   assign reg_we = reg_intf_req.valid & reg_intf_req.write;
   assign reg_re = reg_intf_req.valid & ~reg_intf_req.write;
@@ -61,33 +64,78 @@ module test_regs_reg_top #(
   assign reg_intf_rsp.error = reg_error;
   assign reg_intf_rsp.ready = 1'b1;
 
+  // cdc oversampling signals
+
   assign reg_rdata = reg_rdata_next ;
   assign reg_error = (devmode_i & addrmiss) | wr_err;
-
 
   // Define SW related signals
   // Format: <reg>_<field>_{wd|we|qs}
   //        or <reg>_{wd|we|qs} if field == 1 or 0
+  logic reg1_we;
   logic [31:0] reg1_qs;
   logic [31:0] reg1_wd;
-  logic reg1_we;
+  logic reg2_we;
   logic [31:0] reg2_qs;
   logic [31:0] reg2_wd;
-  logic reg2_we;
-  logic [31:0] reg3_qs;
-  logic [31:0] reg3_wd;
   logic reg3_we;
+  logic [31:0] reg3_qs;
+  logic reg3_busy;
+  // Define register CDC handling.
+  // CDC handling is done on a per-reg instead of per-field boundary.
+
+  logic [31:0]  alt_reg3_ds_int;
+  logic [31:0]  alt_reg3_qs_int;
+  logic [31:0] alt_reg3_ds;
+  logic alt_reg3_qe;
+  logic [31:0] alt_reg3_qs;
+  logic [31:0] alt_reg3_wdata;
+  logic alt_reg3_we;
+  logic unused_alt_reg3_wdata;
+
+  always_comb begin
+    alt_reg3_qs = 32'h0;
+    alt_reg3_ds = 32'h0;
+    alt_reg3_ds = alt_reg3_ds_int;
+    alt_reg3_qs = alt_reg3_qs_int;
+  end
+
+  prim_reg_cdc #(
+    .DataWidth(32),
+    .ResetVal(32'h0),
+    .BitMask(32'hffffffff),
+    .DstWrReq(1)
+  ) u_reg3_cdc (
+    .clk_src_i    (clk_i),
+    .rst_src_ni   (rst_ni),
+    .clk_dst_i    (clk_alt_i),
+    .rst_dst_ni   (rst_alt_ni),
+    .src_regwen_i ('0),
+    .src_we_i     (reg3_we),
+    .src_re_i     ('0),
+    .src_wd_i     (reg_wdata[31:0]),
+    .src_busy_o   (reg3_busy),
+    .src_qs_o     (reg3_qs), // for software read back
+    .dst_update_i (alt_reg3_qe),
+    .dst_ds_i     (alt_reg3_ds),
+    .dst_qs_i     (alt_reg3_qs),
+    .dst_we_o     (alt_reg3_we),
+    .dst_re_o     (),
+    .dst_regwen_o (),
+    .dst_wd_o     (alt_reg3_wdata)
+  );
+  assign unused_alt_reg3_wdata =
+      ^alt_reg3_wdata;
 
   // Register instances
   // R[reg1]: V(False)
-
   prim_subreg #(
     .DW      (32),
-    .SWACCESS("RW"),
+    .SwAccess(prim_subreg_pkg::SwAccessRW),
     .RESVAL  (32'h0)
   ) u_reg1 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
+    .clk_i   (clk_i),
+    .rst_ni  (rst_ni),
 
     // from register interface
     .we     (reg1_we),
@@ -95,11 +143,12 @@ module test_regs_reg_top #(
 
     // from internal hardware
     .de     (hw2reg.reg1.de),
-    .d      (hw2reg.reg1.d ),
+    .d      (hw2reg.reg1.d),
 
     // to internal hardware
     .qe     (),
-    .q      (reg2hw.reg1.q ),
+    .q      (reg2hw.reg1.q),
+    .ds     (),
 
     // to register interface (read)
     .qs     (reg1_qs)
@@ -107,14 +156,13 @@ module test_regs_reg_top #(
 
 
   // R[reg2]: V(False)
-
   prim_subreg #(
     .DW      (32),
-    .SWACCESS("RW"),
+    .SwAccess(prim_subreg_pkg::SwAccessRW),
     .RESVAL  (32'h0)
   ) u_reg2 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
+    .clk_i   (clk_i),
+    .rst_ni  (rst_ni),
 
     // from register interface
     .we     (reg2_we),
@@ -122,11 +170,12 @@ module test_regs_reg_top #(
 
     // from internal hardware
     .de     (hw2reg.reg2.de),
-    .d      (hw2reg.reg2.d ),
+    .d      (hw2reg.reg2.d),
 
     // to internal hardware
     .qe     (),
-    .q      (reg2hw.reg2.q ),
+    .q      (reg2hw.reg2.q),
+    .ds     (),
 
     // to register interface (read)
     .qs     (reg2_qs)
@@ -134,31 +183,32 @@ module test_regs_reg_top #(
 
 
   // R[reg3]: V(False)
-
+  logic [0:0] reg3_flds_we;
+  assign alt_reg3_qe = |reg3_flds_we;
   prim_subreg #(
     .DW      (32),
-    .SWACCESS("RW"),
+    .SwAccess(prim_subreg_pkg::SwAccessRW),
     .RESVAL  (32'h0)
   ) u_reg3 (
-    .clk_i   (clk_i    ),
-    .rst_ni  (rst_ni  ),
+    .clk_i   (clk_alt_i),
+    .rst_ni  (rst_alt_ni),
 
     // from register interface
-    .we     (reg3_we),
-    .wd     (reg3_wd),
+    .we     (alt_reg3_we),
+    .wd     (alt_reg3_wdata[31:0]),
 
     // from internal hardware
     .de     (hw2reg.reg3.de),
-    .d      (hw2reg.reg3.d ),
+    .d      (hw2reg.reg3.d),
 
     // to internal hardware
-    .qe     (),
-    .q      (reg2hw.reg3.q ),
+    .qe     (reg3_flds_we[0]),
+    .q      (reg2hw.reg3.q),
+    .ds     (alt_reg3_ds_int),
 
     // to register interface (read)
-    .qs     (reg3_qs)
+    .qs     (alt_reg3_qs_int)
   );
-
 
 
 
@@ -180,14 +230,15 @@ module test_regs_reg_top #(
                (addr_hit[2] & (|(TEST_REGS_PERMIT[2] & ~reg_be)))));
   end
 
+  // Generate write-enables
   assign reg1_we = addr_hit[0] & reg_we & !reg_error;
+
   assign reg1_wd = reg_wdata[31:0];
-
   assign reg2_we = addr_hit[1] & reg_we & !reg_error;
-  assign reg2_wd = reg_wdata[31:0];
 
+  assign reg2_wd = reg_wdata[31:0];
   assign reg3_we = addr_hit[2] & reg_we & !reg_error;
-  assign reg3_wd = reg_wdata[31:0];
+
 
   // Read data return
   always_comb begin
@@ -202,14 +253,33 @@ module test_regs_reg_top #(
       end
 
       addr_hit[2]: begin
-        reg_rdata_next[31:0] = reg3_qs;
+        reg_rdata_next = DW'(reg3_qs);
       end
-
       default: begin
         reg_rdata_next = '1;
       end
     endcase
   end
+
+  // shadow busy
+  logic shadow_busy;
+  assign shadow_busy = 1'b0;
+
+  // register busy
+  logic reg_busy_sel;
+  assign reg_busy = reg_busy_sel | shadow_busy;
+  always_comb begin
+    reg_busy_sel = '0;
+    unique case (1'b1)
+      addr_hit[2]: begin
+        reg_busy_sel = reg3_busy;
+      end
+      default: begin
+        reg_busy_sel  = '0;
+      end
+    endcase
+  end
+
 
   // Unused signal tieoff
 
@@ -221,7 +291,7 @@ module test_regs_reg_top #(
   assign unused_be = ^reg_be;
 
   // Assertions for Register Interface
-  `ASSERT(en2addrHit, (reg_we || reg_re) |-> $onehot0(addr_hit))
+  `ASSERT(en2addrHit, (reg_we || reg_re) |-> $onehot0(addr_hit), clk_i, !rst_ni)
 
 endmodule
 
@@ -232,6 +302,8 @@ module test_regs_reg_top_intf
 ) (
   input logic clk_i,
   input logic rst_ni,
+  input logic clk_alt_i,
+  input logic rst_alt_ni,
   REG_BUS.in  regbus_slave,
   // To HW
   output test_regs_reg_pkg::test_regs_reg2hw_t reg2hw, // Write
@@ -266,6 +338,8 @@ module test_regs_reg_top_intf
   ) i_regs (
     .clk_i,
     .rst_ni,
+    .clk_alt_i,
+    .rst_alt_ni,
     .reg_req_i(s_reg_req),
     .reg_rsp_o(s_reg_rsp),
     .reg2hw, // Write

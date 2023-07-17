@@ -19,6 +19,7 @@ module tb_simple_registers;
   localparam int DataWidth = 32;
 
   logic clk, rst_n;
+  logic clk_alt, rst_alt_n;
 
   REG_BUS #(
     .DATA_WIDTH(DataWidth),
@@ -40,6 +41,14 @@ module tb_simple_registers;
     .rst_no ( rst_n )
   );
 
+  clk_rst_gen #(
+    .ClkPeriod    ( 22ns ),
+    .RstClkCycles ( 5    )
+  ) i_clk_alt_gen (
+    .clk_o  ( clk_alt   ),
+    .rst_no ( rst_n_alt )
+  );
+
   import test_regs_reg_pkg::* ;
 
   test_regs_reg_top #(
@@ -49,6 +58,8 @@ module tb_simple_registers;
   ) i_test_regs (
     .clk_i    (clk),
     .rst_ni   (rst_n),
+    .clk_alt_i (clk_alt),
+    .rst_alt_ni(rst_alt_n),
     .reg_req_i(reg_req),
     .reg_rsp_o(reg_rsp),
     .reg2hw   (),
@@ -70,7 +81,17 @@ module tb_simple_registers;
     @(posedge rst_n);
     driver.send_write(32'h0000_0000, 32'hdeadbeef, 4'hf, error);
     if (error != 1'b0) $error("unexpected error");
+    driver.send_write(32'h0000_0004, 32'hdeadbeef, 4'hf, error);
+    if (error != 1'b0) $error("unexpected error");
+    driver.send_write(32'h0000_0008, 32'hdeadbeef, 4'hf, error);
+    if (error != 1'b0) $error("unexpected error");
     driver.send_read(32'h0000_0000, data, error);
+    if (error != 1'b0) $error("unexpected error");
+    if (data != 32'hdeadbeef) $error("unexpected data");
+    driver.send_read(32'h0000_0004, data, error);
+    if (error != 1'b0) $error("unexpected error");
+    if (data != 32'hdeadbeef) $error("unexpected data");
+    driver.send_read(32'h0000_0008, data, error);
     if (error != 1'b0) $error("unexpected error");
     if (data != 32'hdeadbeef) $error("unexpected data");
     repeat (10) @(posedge clk);
