@@ -15,6 +15,7 @@ sources:
   # Level 0
   - src/reg_intf.sv
   - vendor/lowrisc_opentitan/src/prim_subreg_pkg.sv
+  - vendor/lowrisc_opentitan/src/prim_sync_reqack.sv
   # Level 1
   - src/apb_to_reg.sv
   - src/axi_to_reg.sv
@@ -29,10 +30,12 @@ sources:
   - src/reg_to_mem.sv
   - src/reg_uniform.sv
   - src/reg_to_tlul.sv
+  - vendor/lowrisc_opentitan/src/prim_reg_cdc_arb.sv
   - vendor/lowrisc_opentitan/src/prim_subreg_arb.sv
   - vendor/lowrisc_opentitan/src/prim_subreg_ext.sv
   # Level 2
   - src/axi_lite_to_reg.sv
+  - vendor/lowrisc_opentitan/src/prim_reg_cdc.sv
   - vendor/lowrisc_opentitan/src/prim_subreg_shadow.sv
   - vendor/lowrisc_opentitan/src/prim_subreg.sv
   - target: test
@@ -61,3 +64,6 @@ vendor_package:
       - {from: 'hw/ip/prim/rtl/prim_subreg_arb.sv', to: 'src/prim_subreg_arb.sv' }
       - {from: 'hw/ip/prim/rtl/prim_subreg_ext.sv', to: 'src/prim_subreg_ext.sv' }
       - {from: 'hw/ip/prim/rtl/prim_subreg_shadow.sv', to: 'src/prim_subreg_shadow.sv', patch_dir: 'subreg_shadow' }
+      - {from: 'hw/ip/prim/rtl/prim_sync_reqack.sv', to: 'src/prim_sync_reqack.sv', patch_dir: 'sync_reqack' }
+      - {from: 'hw/ip/prim/rtl/prim_reg_cdc.sv', to: 'src/prim_reg_cdc.sv', patch_dir: 'reg_cdc' }
+      - {from: 'hw/ip/prim/rtl/prim_reg_cdc_arb.sv', to: 'src/prim_reg_cdc_arb.sv', patch_dir: 'reg_cdc_arb' }

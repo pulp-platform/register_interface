@@ -1,0 +1,159 @@
+From 278703b7c03798a7521b374d8558dc9eb1fb46ba Mon Sep 17 00:00:00 2001
+From: Michael Rogenmoser <michael@rogenmoser.us>
+Date: Mon, 17 Jul 2023 19:30:21 +0200
+Subject: [PATCH] Fix CDC register functionality
+
+---
+ reg_top.sv.tpl | 69 ++++++++++++++++++++++++++++++++++++++++++++------
+ 1 file changed, 61 insertions(+), 8 deletions(-)
+
+diff --git a/reg_top.sv.tpl b/reg_top.sv.tpl
+index b81b920bc..a9c9db8a6 100644
+--- a/reg_top.sv.tpl
++++ b/reg_top.sv.tpl
+@@ -62,9 +62,13 @@
+   reg_rst_expr = "rst_ni"
+   tl_h2d_expr = "tl_i"
+   tl_d2h_expr = "tl_o"
++  reg_req_expr = "reg_req_i"
++  reg_rsp_expr = "reg_rsp_o"
+   if rb.async_if:
+     tl_h2d_expr = "tl_async_h2d"
+     tl_d2h_expr = "tl_async_d2h"
++    reg_req_expr = "reg_async_req"
++    reg_rsp_expr = "reg_async_rsp"
+     for clock in rb.clocks.values():
+       reg_clk_expr = clock.clock
+       reg_rst_expr = clock.reset
+@@ -222,6 +226,7 @@ module ${mod_name} \
+ % endif
+ % endif
+ 
++% if not use_reg_iface:
+ ## The clock and reset inputs aren't used if this device interface has no
+ ## registers, only one window and isn't marked asynchronous. In that case, add
+ ## an unused_ signal to avoid lint warnings.
+@@ -257,6 +262,27 @@ module ${mod_name} \
+     .tl_d_i(${tl_d2h_expr})
+   );
+ % endif
++% else:
++% if rb.async_if:
++  reg_req_t reg_async_req;
++  reg_rsp_t reg_async_rsp;
++
++  reg_cdc #(
++    .CDC_KIND = "cdc_4phase",
++    .req_t   (reg_req_t),
++    .rsp_t   (reg_rsp_t)
++  ) i_if_sync (
++    .src_clk_i (clk_i),
++    .src_rst_ni(rst_ni),
++    .src_req_i (reg_req_i),
++    .src_rsp_o (reg_rsp_o),
++    .dst_clk_i (${reg_clk_expr}),
++    .dst_rst_ni(${reg_rst_expr}),
++    .dst_req_o (reg_async_req),
++    .dst_rsp_i (reg_async_rsp)
++  );
++% endif
++% endif
+ 
+ % if not use_reg_iface:
+ % if rb.all_regs:
+@@ -329,8 +355,8 @@ module ${mod_name} \
+   ## one window.
+   % if num_wins == 0:
+     % if use_reg_iface:
+-  assign reg_intf_req = reg_req_i;
+-  assign reg_rsp_o = reg_intf_rsp;
++  assign reg_intf_req = ${reg_req_expr};
++  assign ${reg_rsp_expr} = reg_intf_rsp;
+     % else:
+   assign tl_reg_h2d = ${tl_h2d_expr};
+   assign tl_o_pre   = tl_reg_d2h;
+@@ -366,12 +392,12 @@ module ${mod_name} \
+     .req_t    (${reg_intf_req}),
+     .rsp_t    (${reg_intf_rsp})
+   ) i_reg_demux (
+-    .clk_i,
+-    .rst_ni,
+-    .in_req_i (reg_req_i),
+-    .in_rsp_o (reg_rsp_o),
+-    .out_req_o (reg_intf_demux_req),
+-    .out_rsp_i (reg_intf_demux_rsp),
++    .clk_i       (${reg_clk_expr}),
++    .rst_ni      (${reg_rst_expr}),
++    .in_req_i    (${reg_req_expr}),
++    .in_rsp_o    (${reg_rsp_expr}),
++    .out_req_o   (reg_intf_demux_req),
++    .out_rsp_i   (reg_intf_demux_rsp),
+     .in_select_i (reg_steer)
+   );
+ 
+@@ -439,7 +465,11 @@ module ${mod_name} \
+       assert (limit_addr-1 >= base_addr)
+       addr_test = f"[{base_addr}:{limit_addr-1}]"
+ %>\
++    % if use_reg_iface:
++        ${f'{reg_req_expr}.addr[AW-1:0]'} inside {${addr_test}} ? ${steer_width}'d${i} :
++    % else:
+         ${f'{tl_h2d_expr}.a_address[AW-1:0]'} inside {${addr_test}} ? ${steer_width}'d${i} :
++    % endif
+   % endfor
+         // Default set to register
+         ${steer_width}'d${num_dsp-1};
+@@ -762,6 +792,7 @@ ${field_wd_gen(f, r.name.lower() + "_" + f.name.lower(), r.hwext, r.shadowed, r.
+     % endif
+   % endfor
+ 
++  % if not use_reg_iface:
+   // Assign write-enables to checker logic vector.
+   always_comb begin
+     reg_we_check = '0;
+@@ -789,6 +820,7 @@ ${field_wd_gen(f, r.name.lower() + "_" + f.name.lower(), r.hwext, r.shadowed, r.
+     % endfor
+   end
+ 
++  % endif
+   // Read data return
+   always_comb begin
+     reg_rdata_next = '0;
+@@ -1165,6 +1197,26 @@ ${bits.msb}\
+   logic async_${finst_name}_err_update;
+   logic async_${finst_name}_err_storage;
+ 
++        % if use_reg_iface:
++  sync #(
++    .STAGES    (2),
++    .ResetValue('0)
++  ) u_${finst_name}_err_storage_sync (
++    .clk_i,
++    .rst_ni,
++    .serial_i ( async_${finst_name}_err_storage ),
++    .serial_o ( ${finst_name}_storage_err )
++  );
++
++  edge_propagator u_${finst_name}_err_update_sync (
++    .clk_tx_i  (${reg.async_clk.clock}),
++    .rstn_tx_i (${reg.async_clk.reset}),
++    .edge_i    (async_${finst_name}_err_update),
++    .clk_rx_i  (clk_i),
++    .rstn_rx_i (rst_ni),
++    .edge_o    (${finst_name}_update_err)
++  );
++        % else:
+   // storage error is persistent and can be sampled at any time
+   prim_flop_2sync #(
+     .Width(1),
+@@ -1185,6 +1237,7 @@ ${bits.msb}\
+     .rst_dst_ni(rst_ni),
+     .dst_pulse_o(${finst_name}_update_err)
+   );
++        % endif
+       % endif
+   ${subreg_block} #(
+     .DW      (${field.bits.width()}),
+-- 
+2.31.1
+

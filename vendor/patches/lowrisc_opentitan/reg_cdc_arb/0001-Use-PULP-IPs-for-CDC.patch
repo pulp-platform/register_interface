@@ -1,0 +1,46 @@
+From 39a72f7512a7360a9b8db3c5d24d71e886cecbcc Mon Sep 17 00:00:00 2001
+From: Michael Rogenmoser <michael@rogenmoser.us>
+Date: Mon, 17 Jul 2023 19:41:40 +0200
+Subject: [PATCH] Use PULP IPs for CDC
+
+---
+ prim_reg_cdc_arb.sv | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/prim_reg_cdc_arb.sv b/prim_reg_cdc_arb.sv
+index 815fef896..dc47a4da1 100644
+--- a/prim_reg_cdc_arb.sv
++++ b/prim_reg_cdc_arb.sv
+@@ -4,7 +4,7 @@
+ //
+ // Component handling register CDC
+ 
+-`include "prim_assert.sv"
++`include "common_cells/assertions.svh"
+ 
+ // There are three handling scenarios.
+ // 1. The register can only be updated by software.
+@@ -287,13 +287,13 @@ module prim_reg_cdc_arb #(
+     // since there are no hw transactions, src_update_o is always '0
+     assign src_update_o = '0;
+ 
+-    prim_pulse_sync u_dst_to_src_ack (
+-      .clk_src_i(clk_dst_i),
+-      .rst_src_ni(rst_dst_ni),
+-      .clk_dst_i(clk_src_i),
+-      .rst_dst_ni(rst_src_ni),
+-      .src_pulse_i(dst_req_i),
+-      .dst_pulse_o(src_ack_o)
++    edge_propagator u_dst_to_src_ack (
++      .clk_tx_i (clk_dst_i),
++      .rstn_tx_i(rst_dst_ni),
++      .edge_i   (dst_req_i),
++      .clk_rx_i (clk_src_i),
++      .rstn_rx_i(rst_src_ni),
++      .edge_o   (src_ack_o)
+     );
+ 
+     logic unused_sigs;
+-- 
+2.31.1
+
