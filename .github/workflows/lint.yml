@@ -23,7 +23,7 @@ jobs:
             ./vendor/lowrisc_opentitan/src
           exclude_paths: |
             ./src/test/test_regs_reg_top.sv
-          extra_args: "--rules=-interface-name-style --lint_fatal --parse_fatal --waiver_files lint/verible.waiver"
+          extra_args: "--rules=-interface-name-style,+explicit-parameter-storage-type=exempt_type:string --lint_fatal --parse_fatal --waiver_files lint/verible.waiver"
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reviewdog_reporter: github-check
 
