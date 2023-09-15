@@ -175,18 +175,18 @@ module test_regs_reg_top #(
   // Check sub-word write is permitted
   always_comb begin
     wr_err = (reg_we &
-              ((addr_hit[0] & (|(TEST_REGS_PERMIT[0] & ~reg_be))) |
-               (addr_hit[1] & (|(TEST_REGS_PERMIT[1] & ~reg_be))) |
-               (addr_hit[2] & (|(TEST_REGS_PERMIT[2] & ~reg_be)))));
+              ((addr_hit[0] & (|(~TEST_REGS_PERMIT[0] & reg_be))) |
+               (addr_hit[1] & (|(~TEST_REGS_PERMIT[1] & reg_be))) |
+               (addr_hit[2] & (|(~TEST_REGS_PERMIT[2] & reg_be)))));
   end
 
-  assign reg1_we = addr_hit[0] & reg_we & !reg_error;
+  assign reg1_we = addr_hit[0] & reg_we & reg_be[0] & reg_be[1] & reg_be[2] & reg_be[3] & !reg_error;
   assign reg1_wd = reg_wdata[31:0];
 
-  assign reg2_we = addr_hit[1] & reg_we & !reg_error;
+  assign reg2_we = addr_hit[1] & reg_we & reg_be[0] & reg_be[1] & reg_be[2] & reg_be[3] & !reg_error;
   assign reg2_wd = reg_wdata[31:0];
 
-  assign reg3_we = addr_hit[2] & reg_we & !reg_error;
+  assign reg3_we = addr_hit[2] & reg_we & reg_be[0] & reg_be[1] & reg_be[2] & reg_be[3] & !reg_error;
   assign reg3_wd = reg_wdata[31:0];
 
   // Read data return

@@ -1,0 +1,51 @@
+From f7b09466a8310cf6896724a906a6d300d01782f3 Mon Sep 17 00:00:00 2001
+From: Thomas Benz <tbenz@iis.ee.ethz.ch>
+Date: Fri, 15 Sep 2023 13:01:07 +0200
+Subject: [PATCH] Fix sub-word accesses
+
+---
+ reg_top.sv.tpl | 14 ++++++++++++--
+ 1 file changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/reg_top.sv.tpl b/reg_top.sv.tpl
+index bfab87fff..b3826fb41 100644
+--- a/reg_top.sv.tpl
++++ b/reg_top.sv.tpl
+@@ -450,7 +450,7 @@ ${finst_gen(f, finst_name, fsig_name, r.hwext, r.regwen, r.shadowed)}
+     # any bytes that aren't supported by a register. That's true if a
+     # addr_hit[i] and a bit is set in reg_be but not in *_PERMIT[i].
+ 
+-    wr_err_terms = ['(addr_hit[{idx}] & (|({mod}_PERMIT[{idx}] & ~reg_be)))'
++    wr_err_terms = ['(addr_hit[{idx}] & (|(~{mod}_PERMIT[{idx}] & reg_be)))'
+                     .format(idx=str(i).rjust(max_regs_char),
+                             mod=u_mod_base)
+                     for i in range(len(regs_flat))]
+@@ -617,6 +617,16 @@ ${bits.msb}:${bits.lsb}\
+ ${bits.msb}\
+ % endif
+ </%def>\
++<%def name="strb_ena_write(bits)">\
++<%
++upper_strobe = int(bits.msb) // 8
++lower_strobe = int(bits.lsb) // 8
++check_expr = []
++for strb in range(lower_strobe, upper_strobe + 1):
++    check_expr.append(f'& reg_be[{strb}]')
++%>\
++${' '.join(check_expr)}\
++</%def>\
+ <%def name="str_arr_sv(bits)">\
+ % if bits.msb != bits.lsb:
+ [${bits.msb-bits.lsb}:0] \
+@@ -774,7 +784,7 @@ ${bits.msb}\
+ ${space}\
+ % if needs_we:
+   % if field.swaccess.swrd() != SwRdAccess.RC:
+-  assign ${sig_name}_we = addr_hit[${idx}] & reg_we & !reg_error;
++  assign ${sig_name}_we = addr_hit[${idx}] & reg_we ${strb_ena_write(field.bits)} & !reg_error;
+   assign ${sig_name}_wd = reg_wdata[${str_bits_sv(field.bits)}];
+   % else:
+   ## Generate WE based on read request, read should clear
+-- 
+2.16.5
+

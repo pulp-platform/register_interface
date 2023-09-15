@@ -53,8 +53,8 @@ vendor_package:
     mapping:
       - {from: 'util/regtool.py', to: 'util/regtool.py', patch_dir: 'regtool'}
       - {from: 'util/reggen', to: 'util/reggen', patch_dir: 'reggen'}
-      - {from: 'util/topgen', to: 'util/topgen'}
-      - {from: 'hw/ip/prim/rtl/prim_subreg.sv', to: 'src/prim_subreg.sv' }
-      - {from: 'hw/ip/prim/rtl/prim_subreg_arb.sv', to: 'src/prim_subreg_arb.sv' }
-      - {from: 'hw/ip/prim/rtl/prim_subreg_ext.sv', to: 'src/prim_subreg_ext.sv' }
-      - {from: 'hw/ip/prim/rtl/prim_subreg_shadow.sv', to: 'src/prim_subreg_shadow.sv' }
+      - {from: 'util/topgen', to: 'util/topgen', patch_dir: 'topgen'}
+      - {from: 'hw/ip/prim/rtl/prim_subreg.sv', to: 'src/prim_subreg.sv', patch_dir: 'src'}
+      - {from: 'hw/ip/prim/rtl/prim_subreg_arb.sv', to: 'src/prim_subreg_arb.sv', patch_dir: 'src'}
+      - {from: 'hw/ip/prim/rtl/prim_subreg_ext.sv', to: 'src/prim_subreg_ext.sv', patch_dir: 'src'}
+      - {from: 'hw/ip/prim/rtl/prim_subreg_shadow.sv', to: 'src/prim_subreg_shadow.sv', patch_dir: 'src'}
