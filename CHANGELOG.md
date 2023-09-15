@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## 0.4.2 - 2023-09-15
+### Added
+- Expose `axi_to_axi_lite` module's `FULL_BW` parameter in `axi_to_reg`.
+- Add `axi_to_reg_v2` with simpler design and improved performance.
+- Add `regtool` patch to generate documentation.
+### Changed
+- Deprecate `axi_to_reg` in favor of `axi_to_reg_v2`.
+- Bump `axi` dependency minor version to `v0.39.1`.
+
 ## 0.4.1 - 2023-06-12
 ### Added
 - `reg_cut` module that cuts all combinational paths between src and dst
