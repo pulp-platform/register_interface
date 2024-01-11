@@ -19,6 +19,8 @@ module axi_to_reg_v2 #(
   parameter int unsigned AxiUserWidth = 32'd0,
   /// The data width of the Reg bus
   parameter int unsigned RegDataWidth = 32'd0,
+  /// Cut the bus to avoid possible critical paths.
+  parameter bit unsigned RegCut       = 1'b0,
   /// AXI request struct type.
   parameter type         axi_req_t    = logic,
   /// AXI response struct type.
@@ -149,6 +151,9 @@ module axi_to_reg_v2 #(
   end
 
   // arbitrate over valid accesses in sub buses
+  reg_req_t  reg_req_out;
+  reg_rsp_t  reg_rsp_in;
+  id_t       reg_id_out;
   reg_mux #(
     .NoPorts( NumBanks     ),
     .AW     ( AxiAddrWidth ),
@@ -158,13 +163,38 @@ module axi_to_reg_v2 #(
   ) i_reg_mux (
     .clk_i,
     .rst_ni,
-    .in_req_i  ( valid_req ),
-    .in_rsp_o  ( valid_rsp ),
-    .out_req_o ( reg_req_o ),
-    .out_rsp_i ( reg_rsp_i )
+    .in_req_i  ( valid_req   ),
+    .in_rsp_o  ( valid_rsp   ),
+    .out_req_o ( reg_req_out ),
+    .out_rsp_i ( reg_rsp_in  )
   );
 
   // forward the id, all banks carry the same ID here
-  assign reg_id_o = mem_id[0];
+  assign reg_id_out = mem_id[0];
+
+  if (RegCut) begin: gen_reg_cut
+    reg_cut #(
+      .req_t ( reg_req_t ),
+      .rsp_t ( reg_rsp_t )
+    ) i_reg_cut (
+      .clk_i,
+      .rst_ni,
+      .src_req_i ( reg_req_out ),
+      .src_rsp_o ( reg_rsp_in  ),
+      .dst_req_o ( reg_req_o   ),
+      .dst_rsp_i ( reg_rsp_i   )
+    );
+    always_ff @(posedge clk_i, negedge rst_ni) begin
+      if (~rst_ni) begin
+        reg_id_o <= '0;
+      end else begin
+        reg_id_o <= reg_id_out;
+      end
+    end
+  end else begin: gen_no_reg_cut
+    assign reg_req_o  = reg_req_out;
+    assign reg_rsp_in = reg_rsp_i;
+    assign reg_id_o   = reg_id_out;
+  end
 
 endmodule
