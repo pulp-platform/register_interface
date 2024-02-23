@@ -19,6 +19,11 @@ module axi_to_reg_v2 #(
   parameter int unsigned AxiUserWidth = 32'd0,
   /// The data width of the Reg bus
   parameter int unsigned RegDataWidth = 32'd0,
+  /// Whether to cut paths just before conversion to reg protocol.
+  /// This incurs O(AxiDataWidth/RegDataWidth) spill regs, but can
+  /// significantly improve (usually uncut as in-cycle) reg timing.
+  parameter bit          CutMemReqs   = 1'b0,
+  parameter bit          CutMemRsps   = 1'b0,
   /// AXI request struct type.
   parameter type         axi_req_t    = logic,
   /// AXI response struct type.
@@ -48,14 +53,14 @@ module axi_to_reg_v2 #(
   localparam type reg_strb_t = logic [RegDataWidth/8-1:0];
 
   // TCDM BUS
-  logic      [NumBanks-1:0] mem_req;
-  logic      [NumBanks-1:0] mem_gnt;
+  logic      [NumBanks-1:0] mem_qvalid;
+  logic      [NumBanks-1:0] mem_qready;
   addr_t     [NumBanks-1:0] mem_addr;
   reg_data_t [NumBanks-1:0] mem_wdata;
   reg_strb_t [NumBanks-1:0] mem_strb;
   logic      [NumBanks-1:0] mem_we;
   id_t       [NumBanks-1:0] mem_id;
-  logic      [NumBanks-1:0] mem_rvalid;
+  logic      [NumBanks-1:0] mem_pvalid;
   reg_data_t [NumBanks-1:0] mem_rdata;
   logic      [NumBanks-1:0] mem_err;
 
@@ -81,8 +86,8 @@ module axi_to_reg_v2 #(
     .busy_o,
     .axi_req_i,
     .axi_resp_o   ( axi_rsp_o           ),
-    .mem_req_o    ( mem_req             ),
-    .mem_gnt_i    ( mem_gnt             ),
+    .mem_req_o    ( mem_qvalid          ),
+    .mem_gnt_i    ( mem_qready          ),
     .mem_addr_o   ( mem_addr            ),
     .mem_wdata_o  ( mem_wdata           ),
     .mem_strb_o   ( mem_strb            ),
@@ -95,14 +100,80 @@ module axi_to_reg_v2 #(
     .mem_prot_o   ( /* NOT CONNECTED */ ),
     .mem_qos_o    ( /* NOT CONNECTED */ ),
     .mem_region_o ( /* NOT CONNECTED */ ),
-    .mem_rvalid_i ( mem_rvalid          ),
+    .mem_rvalid_i ( mem_pvalid          ),
     .mem_rdata_i  ( mem_rdata           ),
     .mem_err_i    ( mem_err             ),
     .mem_exokay_i ( '0                  )
   );
 
+  // Some tools don't like typedefs inside generate blocks
+  typedef struct packed {
+    addr_t     addr;
+    reg_data_t wdata;
+    reg_strb_t strb;
+    logic      we;
+    id_t       id;
+  } mem_req_t;
+
+  typedef struct packed {
+    reg_data_t rdata;
+    logic      err;
+  } mem_rsp_t;
+
   // every subbus is converted independently
   for (genvar i = 0; i < NumBanks; i++) begin : gen_tcdm_to_reg
+    mem_req_t mem_req, mem_cut_req;
+    mem_rsp_t mem_rsp, mem_cut_rsp;
+
+    logic mem_cut_req_valid, mem_cut_req_ready;
+    logic mem_cut_rsp_valid;
+
+    // Assign request fields to struct
+    assign mem_req.addr  = mem_addr  [i];
+    assign mem_req.wdata = mem_wdata [i];
+    assign mem_req.strb  = mem_strb  [i];
+    assign mem_req.we    = mem_we    [i];
+    assign mem_req.id    = mem_id    [i];
+
+    // Assign response struct to fields
+    assign mem_rdata [i] = mem_rsp.rdata;
+    assign mem_err   [i] = mem_rsp.err;
+
+    // Cut mem requests if enabled
+    spill_register #(
+      .T (mem_req_t),
+      .Bypass (~CutMemReqs)
+    ) i_mem_req_spill (
+      .clk_i,
+      .rst_ni,
+      .valid_i ( mem_qvalid[i] ),
+      .ready_o ( mem_qready[i] ),
+      .data_i  ( mem_req ),
+      .valid_o ( mem_cut_req_valid ),
+      .ready_i ( mem_cut_req_ready ),
+      .data_o  ( mem_cut_req )
+    );
+
+    // Cut mem responses if enabled
+    spill_register #(
+      .T (mem_rsp_t),
+      .Bypass (~CutMemRsps)
+    ) i_mem_rsp_spill (
+      .clk_i,
+      .rst_ni,
+      .valid_i ( mem_cut_rsp_valid ),
+      .ready_o ( ),
+      .data_i  ( mem_cut_rsp ),
+      .valid_o ( mem_pvalid[i] ),
+      .ready_i ( 1'b1 ),
+      .data_o  ( mem_rsp )
+    );
+
+    // forward the id, all banks carry the same ID here
+    if (i == 0) begin : gen_id_fw
+      assign reg_id_o = mem_cut_req.id;
+    end
+
     periph_to_reg #(
       .AW    ( AxiAddrWidth ),
       .DW    ( RegDataWidth ),
@@ -112,19 +183,19 @@ module axi_to_reg_v2 #(
     ) i_periph_to_reg (
       .clk_i,
       .rst_ni,
-      .req_i     ( mem_req    [i]      ),
-      .add_i     ( mem_addr   [i]      ),
-      .wen_i     ( !mem_we    [i]      ),
-      .wdata_i   ( mem_wdata  [i]      ),
-      .be_i      ( mem_strb   [i]      ),
-      .id_i      ( '0                  ),
-      .gnt_o     ( mem_gnt    [i]      ),
-      .r_rdata_o ( mem_rdata  [i]      ),
-      .r_opc_o   ( mem_err    [i]      ),
-      .r_id_o    ( /* NOT CONNECTED */ ),
-      .r_valid_o ( mem_rvalid [i]      ),
-      .reg_req_o ( reg_req    [i]      ),
-      .reg_rsp_i ( reg_rsp    [i]      )
+      .req_i     ( mem_cut_req_valid ),
+      .add_i     ( mem_cut_req.addr  ),
+      .wen_i     ( ~mem_cut_req.we   ),
+      .wdata_i   ( mem_cut_req.wdata ),
+      .be_i      ( mem_cut_req.strb  ),
+      .id_i      ( '0 ),
+      .gnt_o     ( mem_cut_req_ready ),
+      .r_rdata_o ( mem_cut_rsp.rdata ),
+      .r_opc_o   ( mem_cut_rsp.err   ),
+      .r_id_o    ( ),
+      .r_valid_o ( mem_cut_rsp_valid ),
+      .reg_req_o ( reg_req[i] ),
+      .reg_rsp_i ( reg_rsp[i] )
     );
 
     // filter zero strobe writes early, directly ack them
@@ -163,8 +234,5 @@ module axi_to_reg_v2 #(
     .out_req_o ( reg_req_o ),
     .out_rsp_i ( reg_rsp_i )
   );
-
-  // forward the id, all banks carry the same ID here
-  assign reg_id_o = mem_id[0];
 
 endmodule
