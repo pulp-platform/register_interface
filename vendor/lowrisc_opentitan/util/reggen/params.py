@@ -37,7 +37,7 @@ class BaseParam:
                       'default value for parameter {} '
                       '(which has type {})'
                       .format(self.name, self.param_type))
-        self.default = value
+        self.value = value
 
     def as_dict(self) -> Dict[str, object]:
         rd = {}  # type: Dict[str, object]
@@ -80,12 +80,12 @@ class Parameter(BaseParam):
                  default: str,
                  expose: bool):
         super().__init__(name, desc, param_type)
-        self.default = default
+        self.value = default
         self.expose = expose
 
     def as_dict(self) -> Dict[str, object]:
         rd = super().as_dict()
-        rd['default'] = self.default
+        rd['default'] = self.value
         rd['expose'] = 'true' if self.expose else 'false'
         return rd
 
