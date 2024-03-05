@@ -339,3 +339,24 @@ class ReggenParams(Params):
             if isinstance(param, LocalParam):
                 ret.append(param)
         return ret
+
+    def get_localparams(self) -> List[LocalParam]:
+        ret = []
+        for param in self.by_name.values():
+            if isinstance(param, LocalParam):
+                ret.append(param)
+        return ret
+
+    def get_exposed_params(self) -> List[Parameter]:
+        ret = []
+        for param in self.by_name.values():
+            if isinstance(param, Parameter) and param.expose == True:
+                ret.append(param)
+        return ret
+
+    def get_unexposed_params(self) -> List[Parameter]:
+        ret = []
+        for param in self.by_name.values():
+            if isinstance(param, Parameter) and param.expose == False:
+                ret.append(param)
+        return ret

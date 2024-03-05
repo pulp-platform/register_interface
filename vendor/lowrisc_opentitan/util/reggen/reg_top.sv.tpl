@@ -43,6 +43,10 @@
   reg_intf_req = "reg_req_t"
   reg_intf_rsp = "reg_rsp_t"
 
+  # Get the exposed and unexposed parameters
+  params_exposed = block.params.get_exposed_params()
+  params_unexposed = block.params.get_unexposed_params()
+
   common_data_intg_gen = 0 if rb.has_data_intg_passthru else 1
   adapt_data_intg_gen = 1 if rb.has_data_intg_passthru else 0
   assert common_data_intg_gen != adapt_data_intg_gen
@@ -57,6 +61,11 @@
 module ${mod_name} \
 % if use_reg_iface:
 #(
+  % if params_exposed:
+  % for param in params_exposed:
+    parameter ${param.param_type} ${param.name} = ${param.value},
+  % endfor
+  % endif
     parameter type reg_req_t = logic,
     parameter type reg_rsp_t = logic,
     parameter int AW = ${addr_width}
@@ -108,6 +117,12 @@ module ${mod_name} \
 );
 
   import ${lblock}_reg_pkg::* ;
+
+% if params_unexposed:
+% for param in params_unexposed:
+  localparam ${param.param_type} ${param.name} = ${param.value},
+% endfor
+% endif
 
 % if rb.all_regs:
   localparam int DW = ${block.regwidth};
