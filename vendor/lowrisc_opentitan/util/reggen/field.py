@@ -53,7 +53,7 @@ class Field:
                  hwqe: bool,
                  hwre: bool,
                  bits: Bits,
-                 resval: Optional[int],
+                 resval: Optional[str],
                  enum: Optional[List[EnumEntry]]):
         self.name = name
         self.desc = desc
@@ -122,8 +122,10 @@ class Field:
             # if it's defined, otherwise None (which means "x").
             if reg_resval is None:
                 resval = None
-            else:
+            elif reg_resval.isnumeric():
                 resval = bits.extract_field(reg_resval)
+            else:
+                resval = reg_resval
         else:
             # The field does define a reset value. It should be an integer or
             # 'x'. In the latter case, we set resval to None (as above).

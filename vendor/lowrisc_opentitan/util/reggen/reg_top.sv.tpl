@@ -630,7 +630,11 @@ ${bits.msb}\
       % endif
     .DW      (${field.bits.width()}),
     .SWACCESS("${field.swaccess.value[1].name.upper()}"),
+% if field.resval is None or field.resval.isnumeric():
     .RESVAL  (${field.bits.width()}'h${"%x" % (field.resval or 0)})
+% else:
+    .RESVAL  (${field.resval})
+% endif
   ) u_${finst_name} (
     .clk_i   (clk_i    ),
     .rst_ni  (rst_ni  ),

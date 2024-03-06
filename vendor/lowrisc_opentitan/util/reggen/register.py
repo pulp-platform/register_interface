@@ -50,7 +50,7 @@ OPTIONAL_FIELDS = {
         "write protection"
     ],
     'resval': [
-        'd',
+        's',
         "reset value of full register (default 0)"
     ],
     'tags': [
@@ -87,7 +87,7 @@ class Register(RegBase):
                  hwre: bool,
                  regwen: Optional[str],
                  tags: List[str],
-                 resval: Optional[int],
+                 resval: Optional[str],
                  shadowed: bool,
                  fields: List[Field],
                  update_err_alert: Optional[str],
@@ -155,21 +155,21 @@ class Register(RegBase):
                                  .format(self.name, field.name,
                                          bits_used & field_mask))
 
-        # Compute a reset value and mask from our constituent fields.
-        self.resval = 0
-        self.resmask = 0
-        for field in self.fields:
-            self.resval |= (field.resval or 0) << field.bits.lsb
-            self.resmask |= field.bits.bitmask()
+        # # Compute a reset value and mask from our constituent fields.
+        # self.resval = 0
+        # self.resmask = 0
+        # for field in self.fields:
+        #     self.resval |= (field.resval or 0) << field.bits.lsb
+        #     self.resmask |= field.bits.bitmask()
 
-        # If the register defined a reset value, make sure it matches. We've
-        # already checked that each field matches, but we still need to make
-        # sure there weren't any bits unaccounted for.
-        if resval is not None and self.resval != resval:
-            raise ValueError('Register {} specifies a reset value of {:#x} but '
-                             'collecting reset values across its fields yields '
-                             '{:#x}.'
-                             .format(self.name, resval, self.resval))
+        # # If the register defined a reset value, make sure it matches. We've
+        # # already checked that each field matches, but we still need to make
+        # # sure there weren't any bits unaccounted for.
+        # if resval is not None and self.resval != resval:
+        #     raise ValueError('Register {} specifies a reset value of {:#x} but '
+        #                      'collecting reset values across its fields yields '
+        #                      '{:#x}.'
+        #                      .format(self.name, resval, self.resval))
 
         self.update_err_alert = update_err_alert
         self.storage_err_alert = storage_err_alert
@@ -214,12 +214,20 @@ class Register(RegBase):
         if raw_resval is None:
             resval = None
         else:
-            resval = check_int(raw_resval,
-                               'resval for {} register'.format(name))
-            if not 0 <= resval < (1 << reg_width):
-                raise ValueError('resval for {} register is {}, '
-                                 'not an unsigned {}-bit number.'
-                                 .format(name, resval, reg_width))
+            # Is reset value from param?
+            resval = check_str(rd['resval'],
+                                  'resval field of register {}'
+                                  .format(name))
+            print("resval = {}".format(resval))
+            # resval = params.expand(resval_str,
+                                       # 'resval field of register ' + name)
+
+            # resval = check_int(raw_resval,
+            #                    'resval for {} register'.format(name))
+            # if not 0 <= resval < (1 << reg_width):
+            #     raise ValueError('resval for {} register is {}, '
+            #                      'not an unsigned {}-bit number.'
+            #                      .format(name, resval, reg_width))
 
         shadowed = check_bool(rd.get('shadowed', False),
                               'shadowed flag for {} register'

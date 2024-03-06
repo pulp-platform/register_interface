@@ -230,12 +230,6 @@ value = "{}'h {:x}".format(aw, r.offset)
 
   // Reset values for hwext registers and their fields${for_iface}
   % for reg in hwext_regs:
-<%
-    reg_width = reg.get_width()
-    reg_msb = reg_width - 1
-    reg_resval = "{}'h {:x}".format(reg_width, reg.resval)
-%>\
-  parameter logic [${reg_msb}:0] ${reg_resname(reg)} = ${reg_resval};
     % for field in reg.fields:
       % if field.resval is not None:
 <%
