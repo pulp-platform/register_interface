@@ -30,6 +30,7 @@ sources:
   - src/reg_to_apb.sv
   - src/reg_to_mem.sv
   - src/reg_to_tlul.sv
+  - src/reg_to_axi.sv
   - src/reg_uniform.sv
   - vendor/lowrisc_opentitan/src/prim_subreg_shadow.sv
   - vendor/lowrisc_opentitan/src/prim_subreg.sv

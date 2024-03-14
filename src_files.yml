@@ -24,6 +24,7 @@ register_interface:
     - src/reg_to_apb.sv
     - src/reg_to_mem.sv
     - src/reg_to_tlul.sv
+    - src/reg_to_axi.sv
     - src/reg_uniform.sv
     # Level 2
     - src/deprecated/axi_to_reg.sv
