@@ -223,7 +223,7 @@ module axi_to_reg_v2 #(
   reg_mux #(
     .NoPorts( NumBanks     ),
     .AW     ( AxiAddrWidth ),
-    .DW     ( AxiDataWidth ),
+    .DW     ( RegDataWidth ),
     .req_t  ( reg_req_t    ),
     .rsp_t  ( reg_rsp_t    )
   ) i_reg_mux (
