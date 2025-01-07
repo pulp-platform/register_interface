@@ -17,6 +17,6 @@ We re-use lowrisc's register file generator to generate arbitrary configuration 
 We use the [bender import tool](https://github.com/pulp-platform/bender#import-----copy-files-from-dependencies-that-do-not-support-bender) (`>v0.26.0`) to get the sources and apply our custom patches on top.
 
     curl --proto '=https' --tlsv1.2 https://pulp-platform.github.io/bender/init -sSf | sh -s -- 0.26.0
-    ./bender import --refetch
+    ./bender vendor init
 
 to re-vendor.
