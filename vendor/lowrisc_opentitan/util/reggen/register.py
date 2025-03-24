@@ -285,6 +285,30 @@ class Register(RegBase):
     def is_homogeneous(self) -> bool:
         return len(self.fields) == 1
 
+    def crossed_byte_boundaries(self) -> int:
+        '''
+        Returns the byte boundaries that are crossed by a field contained in this register.
+        e.g. `fields: [ { bits: "23:16" }, { bits: "15:0" } ]`
+        crosses the third and first byte boundary, so it returns 0b101.
+        This is used to determine whether a write using bytestrobe is valid.
+        '''
+        boundaries = 0
+
+        for field in self.fields:
+            bytemask = field.bits.bytemask()
+            boundaries |= bytemask & (bytemask >> 1)
+
+        return boundaries
+
+    def bytemask(self) -> int:
+        bytemask = 0
+
+        for field in self.fields:
+            bytemask |= field.bits.bytemask()
+
+        return bytemask
+
+
     def get_width(self) -> int:
         '''Get the width of the fields in the register in bits
 

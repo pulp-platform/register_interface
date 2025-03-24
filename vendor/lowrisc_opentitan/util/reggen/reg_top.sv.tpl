@@ -438,7 +438,7 @@ ${finst_gen(f, finst_name, fsig_name, r.hwext, r.regwen, r.shadowed)}
   always_comb begin
     addr_hit = '0;
     % for i,r in enumerate(regs_flat):
-    addr_hit[${"{}".format(i).rjust(max_regs_char)}] = (reg_addr == ${ublock}_${r.name.upper()}_OFFSET);
+    addr_hit[${"{}".format(i).rjust(max_regs_char)}] = |(reg_be & ${ublock}_BYTEMASK[${"{}".format(i).rjust(max_regs_char)}]) && reg_addr == ${ublock}_${r.name.upper()}_OFFSET;
     % endfor
   end
 
@@ -446,11 +446,13 @@ ${finst_gen(f, finst_name, fsig_name, r.hwext, r.regwen, r.shadowed)}
 
 % if regs_flat:
 <%
-    # We want to signal wr_err if reg_be (the byte enable signal) is true for
-    # any bytes that aren't supported by a register. That's true if a
-    # addr_hit[i] and a bit is set in reg_be but not in *_PERMIT[i].
+    # We want to signal wr_err if reg_be wants to write to only part of a field.
+    # This is the case if the byte enable has a border (calculated by `reg_be ^ (reg_be >> 1)`)
+    # at a bit where a field is crossing (DISALLOWED_BOUNDARY_CROSSINGS)
+    # e.g. reg_be `0b0100` has a border at position 2 and 3 (-> `0b110`) and is not allowed to write
+    # to a field with bytemask `0b1100`, which disallows a border at bit position 3 (`0b100`)
 
-    wr_err_terms = ['(addr_hit[{idx}] & (|({mod}_PERMIT[{idx}] & ~reg_be)))'
+    wr_err_terms = ['(addr_hit[{idx}] & (|((reg_be ^ (reg_be >> 1)) & {mod}_DISALLOWED_BOUNDARY_CROSSINGS[{idx}])))'
                     .format(idx=str(i).rjust(max_regs_char),
                             mod=u_mod_base)
                     for i in range(len(regs_flat))]
@@ -770,20 +772,21 @@ ${bits.msb}\
     needs_we = field.swaccess.allows_write()
     needs_re = (field.swaccess.allows_read() and hwext) or shadowed
     space = '\n' if needs_we or needs_re else ''
+    bytemask = "4'b {:04b}".format(field.bits.bytemask())
 %>\
 ${space}\
 % if needs_we:
   % if field.swaccess.swrd() != SwRdAccess.RC:
-  assign ${sig_name}_we = addr_hit[${idx}] & reg_we & !reg_error;
+  assign ${sig_name}_we = addr_hit[${idx}] & reg_we & !reg_error & (|(${bytemask} & reg_be));
   assign ${sig_name}_wd = reg_wdata[${str_bits_sv(field.bits)}];
   % else:
   ## Generate WE based on read request, read should clear
-  assign ${sig_name}_we = addr_hit[${idx}] & reg_re & !reg_error;
+  assign ${sig_name}_we = addr_hit[${idx}] & reg_re & !reg_error & (|(${bytemask} & reg_be));
   assign ${sig_name}_wd = '1;
   % endif
 % endif
 % if needs_re:
-  assign ${sig_name}_re = addr_hit[${idx}] & reg_re & !reg_error;
+  assign ${sig_name}_re = addr_hit[${idx}] & reg_re & !reg_error & (|(${bytemask} & reg_be));
 % endif
 </%def>\
 <%def name="rdata_gen(field, sig_name)">\
