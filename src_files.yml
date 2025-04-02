@@ -14,6 +14,7 @@ register_interface:
     - src/apb_to_reg.sv
     - src/axi_lite_to_reg.sv
     - src/axi_to_reg_v2.sv
+    - src/obi_to_reg.sv
     - src/periph_to_reg.sv
     - src/reg_cdc.sv
     - src/reg_cut.sv
