@@ -75,7 +75,7 @@ module reg_to_axi #(
   // Regbus response
   assign reg_rsp_o = '{
     rdata:  axi_rsp_i.r.data,
-    error:  (reg_req_i.write ? axi_rsp_i.b.resp : axi_rsp_i.r.resp) == axi_pkg::RESP_OKAY,
+    error:  (reg_req_i.write ? axi_rsp_i.b.resp : axi_rsp_i.r.resp) != axi_pkg::RESP_OKAY,
     ready:  axi_rsp_i.r_valid | axi_rsp_i.b_valid
   };
 
