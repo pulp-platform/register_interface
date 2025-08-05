@@ -40,7 +40,7 @@ jobs:
       - name: Install bender
         run: curl --proto '=https' --tlsv1.2 https://pulp-platform.github.io/bender/init -sSf | sh -s -- 0.26.0
       - name: Re-vendor and diff
-        run: ./bender import --refetch && git diff --exit-code
+        run: ./bender vendor init && git diff --exit-code
 
   internal:
     name: Internal CI
