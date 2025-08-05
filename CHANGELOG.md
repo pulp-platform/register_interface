@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## 0.4.6 - 2025-08-05
+### Fixed
+- Fix error signaling in `reg_to_axi`.
+- Replaced deprecated `bender import` with new `bender vendor` command.
+- Update link to OpenTitan `reggen`.
+
 ## 0.4.5 - 2024-09-11
 ### Fixed
 - Use `RegDataWidth` instead of `AxiDataWidth` for output multiplexing in `axi_to_reg_v2`.
