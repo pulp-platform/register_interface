@@ -10,6 +10,7 @@ sim:
   script:
     - /usr/local/anaconda3/bin/python vendor/lowrisc_opentitan/util/regtool.py src/test/test_regs.hjson -t src/test -r
     - git diff --exit-code
+    - bender checkout
     - bender script vsim -t test -t register_interface_test --vlog-arg="-svinputport=compat" > compile.tcl
     - questa-2022.3 vsim -c -do 'exit -code [source compile.tcl]'
     - questa-2022.3 vsim -c tb_simple_registers -do "run -all"
