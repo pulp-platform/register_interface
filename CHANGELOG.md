@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## 0.4.7 - 2025-11-20
+### Added
+- Add `apb_to_reg_v2` module without interfaces.
+
+### Changed
+- Deprecate `apb_to_reg` module, `apb_to_reg_intf` moved to `apb_to_reg_v2`.
+
 ## 0.4.6 - 2025-08-05
 ### Fixed
 - Fix error signaling in `reg_to_axi`.
