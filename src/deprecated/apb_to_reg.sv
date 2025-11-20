@@ -10,6 +10,7 @@
 //
 // Florian Zaruba <zarubaf@iis.ee.ethz.ch>
 
+/// DEPRECATED: Use apb_to_reg_v2 or apb_to_reg_intf instead.
 module apb_to_reg #(
   parameter bit Feedthrough = 1'b1
 )(
@@ -63,25 +64,4 @@ module apb_to_reg #(
       prdata_o = reg_o.rdata;
     end
   end
-endmodule
-
-module apb_to_reg_intf #(
-  parameter int unsigned DATA_WIDTH = 32,
-  parameter int unsigned ADDR_WIDTH = 32
-)(
-  APB.Slave    apb_i,
-  REG_BUS.out  reg_o
-);
-
-  always_comb begin
-    reg_o.addr    = apb_i.paddr;
-    reg_o.write   = apb_i.pwrite;
-    reg_o.wdata   = apb_i.pwdata;
-    reg_o.wstrb   = '1;
-    reg_o.valid   = apb_i.psel & apb_i.penable;
-    apb_i.pready  = reg_o.ready;
-    apb_i.pslverr = reg_o.error;
-    apb_i.prdata  = reg_o.rdata;
-  end
-
 endmodule

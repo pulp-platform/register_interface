@@ -17,7 +17,7 @@ sources:
   - vendor/lowrisc_opentitan/src/prim_subreg_arb.sv
   - vendor/lowrisc_opentitan/src/prim_subreg_ext.sv
   # Level 1
-  - src/apb_to_reg.sv
+  - src/apb_to_reg_v2.sv
   - src/axi_lite_to_reg.sv
   - src/axi_to_reg_v2.sv
   - src/periph_to_reg.sv
@@ -35,6 +35,7 @@ sources:
   - vendor/lowrisc_opentitan/src/prim_subreg_shadow.sv
   - vendor/lowrisc_opentitan/src/prim_subreg.sv
   # Level 2
+  - src/deprecated/apb_to_reg.sv
   - src/deprecated/axi_to_reg.sv
   - target: test
     files:
