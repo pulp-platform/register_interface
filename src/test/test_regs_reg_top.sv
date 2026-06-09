@@ -83,7 +83,7 @@ module test_regs_reg_top #(
 
   prim_subreg #(
     .DW      (32),
-    .SWACCESS("RW"),
+    .SwAccess(prim_subreg_pkg::SwAccessRW),
     .RESVAL  (32'h0)
   ) u_reg1 (
     .clk_i   (clk_i    ),
@@ -110,7 +110,7 @@ module test_regs_reg_top #(
 
   prim_subreg #(
     .DW      (32),
-    .SWACCESS("RW"),
+    .SwAccess(prim_subreg_pkg::SwAccessRW),
     .RESVAL  (32'h0)
   ) u_reg2 (
     .clk_i   (clk_i    ),
@@ -137,7 +137,7 @@ module test_regs_reg_top #(
 
   prim_subreg #(
     .DW      (32),
-    .SWACCESS("RW"),
+    .SwAccess(prim_subreg_pkg::SwAccessRW),
     .RESVAL  (32'h0)
   ) u_reg3 (
     .clk_i   (clk_i    ),
