@@ -10,7 +10,6 @@ dependencies:
 
 export_include_dirs:
   - include
-  - vendor/lowrisc_opentitan/src/include
 
 sources:
   # Level 0
