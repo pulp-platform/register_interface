@@ -1,6 +1,9 @@
-// Copyright lowRISC contributors (OpenTitan project).
+// Copyright lowRISC contributors.
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
+
+`ifndef LOWRISC_PRIM_SUBREG_PKG
+  `define LOWRISC_PRIM_SUBREG_PKG
 
 package prim_subreg_pkg;
 
@@ -15,3 +18,5 @@ package prim_subreg_pkg;
     SwAccessRC  = 3'd6  // Read to clear. Do not use, only exists for compatibility.
   } sw_access_e;
 endpackage
+
+`endif
