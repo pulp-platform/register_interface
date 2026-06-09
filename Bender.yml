@@ -10,10 +10,11 @@ dependencies:
 
 export_include_dirs:
   - include
+  - vendor/lowrisc_opentitan/src/include
 
 sources:
   # Level 0
-  - vendor/lowrisc_opentitan/src/prim_subreg_pkg.sv
+  - vendor/lowrisc_opentitan/src/pkg/prim_subreg_pkg.sv
   # Level 1
   - src/reg_intf.sv
   - vendor/lowrisc_opentitan/src/prim_subreg_arb.sv
