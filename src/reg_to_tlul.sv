@@ -34,7 +34,7 @@ module reg_to_tlul #(
   assign tl_o.a_size     = 'h2;
   assign tl_o.a_source   = '0;
   assign tl_o.a_address  = reg_req_i.addr;
-  assign tl_o.a_mask     = reg_req_i.wstrb;
+  assign tl_o.a_mask     = reg_req_i.write ? reg_req_i.wstrb : '1;
   assign tl_o.a_data     = reg_req_i.wdata;
   assign tl_o.a_user     = TL_A_USER_DEFAULT;
   assign tl_o.d_ready    = 1'b1;
