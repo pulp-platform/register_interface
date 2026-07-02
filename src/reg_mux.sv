@@ -48,12 +48,13 @@ module reg_mux #(
     assign in_rsp_o[i].error = out_rsp_i.error;
   end
 
-  stream_arbiter #(
-    .DATA_T (req_payload_t),
-    .N_INP (NoPorts)
+  cc_stream_arbiter #(
+    .data_t (req_payload_t),
+    .NumInp (NoPorts)
   ) i_stream_arbiter (
     .clk_i,
     .rst_ni,
+    .clr_i (1'b0),
     .inp_data_i (in_payload),
     .inp_valid_i (in_valid),
     .inp_ready_o (in_ready),

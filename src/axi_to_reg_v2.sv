@@ -140,12 +140,13 @@ module axi_to_reg_v2 #(
     assign mem_err   [i] = mem_rsp.err;
 
     // Cut mem requests if enabled
-    spill_register #(
-      .T (mem_req_t),
+    cc_spill_register #(
+      .data_t (mem_req_t),
       .Bypass (~CutMemReqs)
     ) i_mem_req_spill (
       .clk_i,
       .rst_ni,
+      .clr_i   ( 1'b0 ),
       .valid_i ( mem_qvalid[i] ),
       .ready_o ( mem_qready[i] ),
       .data_i  ( mem_req ),
@@ -155,12 +156,13 @@ module axi_to_reg_v2 #(
     );
 
     // Cut mem responses if enabled
-    spill_register #(
-      .T (mem_rsp_t),
+    cc_spill_register #(
+      .data_t (mem_rsp_t),
       .Bypass (~CutMemRsps)
     ) i_mem_rsp_spill (
       .clk_i,
       .rst_ni,
+      .clr_i   ( 1'b0 ),
       .valid_i ( mem_cut_rsp_valid ),
       .ready_o ( ),
       .data_i  ( mem_cut_rsp ),
