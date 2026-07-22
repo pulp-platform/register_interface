@@ -77,7 +77,7 @@ module axi_to_reg_v2 #(
     .IdWidth      ( AxiIdWidth    ),
     .UserWidth    ( AxiUserWidth  ),
     .NumBanks     ( NumBanks      ),
-    .BufDepth     ( 32'd1         ),
+    .BufDepth     ( NumBanks      ),
     .HideStrb     ( 1'b0          ),
     .OutFifoDepth ( 32'd1         )
   ) i_axi_to_detailed_mem (

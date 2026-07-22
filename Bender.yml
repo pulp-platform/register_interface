@@ -45,6 +45,10 @@ sources:
       - src/test/test_regs_reg_pkg.sv
       - src/test/test_regs_reg_top.sv
       - src/test/tb_simple_registers.sv
+  - target: axi_to_reg_v2_test
+    files:
+      - src/test/reg_test_mem.sv
+      - src/test/tb_axi_to_reg_v2.sv
 
 vendor_package:
   - name: lowrisc_opentitan
