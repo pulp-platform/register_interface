@@ -45,7 +45,7 @@ module periph_to_reg #(
   always_comb begin : proc_logic
     r_id_d = id_i;
     r_opc_d = reg_rsp_i.error;
-    r_valid_d = gnt_o;
+    r_valid_d = req_i & gnt_o;
     r_rdata_d = reg_rsp_i.rdata;
   end
 
@@ -69,7 +69,7 @@ module periph_to_reg #(
   assign reg_req_o.wstrb = be_i;
   assign reg_req_o.valid = req_i;
 
-  assign gnt_o     = req_i & reg_rsp_i.ready;
+  assign gnt_o     = reg_rsp_i.ready;
 
   assign r_rdata_o = r_rdata_q;
   assign r_opc_o   = r_opc_q;
