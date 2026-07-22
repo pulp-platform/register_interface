@@ -36,11 +36,13 @@ jobs:
     name: Vendor Up-to-Date
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Install bender
-        run: curl --proto '=https' --tlsv1.2 https://pulp-platform.github.io/bender/init -sSf | sh -s -- 0.26.0
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf https://github.com/pulp-platform/bender/releases/latest/download/bender-installer.sh | sh -s -- --no-modify-path
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - name: Re-vendor and diff
-        run: ./bender vendor init && git diff --exit-code
+        run: bender vendor init && git diff --exit-code
 
   internal:
     name: Internal CI
