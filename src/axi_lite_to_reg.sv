@@ -84,15 +84,15 @@ module axi_lite_to_reg #(
   logic read_ready, write_ready;
 
   // Combine AW/W Channel
-  fifo_v3 #(
-    .FALL_THROUGH ( !DECOUPLE_W  ),
-    .DEPTH        ( BUFFER_DEPTH ),
-    .dtype        ( write_t      )
+  cc_fifo #(
+    .FallThrough ( !DECOUPLE_W  ),
+    .Depth       ( BUFFER_DEPTH ),
+    .data_t      ( write_t      )
   ) i_fifo_write_req (
     .clk_i,
     .rst_ni,
+    .clr_i      ( 1'b0             ),
     .flush_i    ( 1'b0             ),
-    .testmode_i ( 1'b0             ),
     .full_o     ( write_fifo_full  ),
     .empty_o    ( write_fifo_empty ),
     .usage_o    ( /* open */       ),
@@ -111,14 +111,14 @@ module axi_lite_to_reg #(
   assign write_fifo_pop = write_valid & write_ready;
 
   //  B Channel
-  fifo_v3 #(
-    .DEPTH        ( BUFFER_DEPTH ),
-    .dtype        ( logic        )
+  cc_fifo #(
+    .Depth       ( BUFFER_DEPTH ),
+    .data_t      ( logic        )
   ) i_fifo_write_resp (
     .clk_i,
     .rst_ni,
+    .clr_i      ( 1'b0                  ),
     .flush_i    ( 1'b0                  ),
-    .testmode_i ( 1'b0                  ),
     .full_o     ( write_resp_fifo_full  ),
     .empty_o    ( write_resp_fifo_empty ),
     .usage_o    ( /* open */            ),
@@ -135,14 +135,14 @@ module axi_lite_to_reg #(
   assign write_resp_fifo_pop = axi_lite_rsp_o.b_valid & axi_lite_req_i.b_ready;
 
   // AR Channel
-  fifo_v3 #(
-    .DEPTH        ( BUFFER_DEPTH ),
-    .DATA_WIDTH   ( ADDR_WIDTH   )
+  cc_fifo #(
+    .Depth       ( BUFFER_DEPTH ),
+    .DataWidth   ( ADDR_WIDTH   )
   ) i_fifo_read (
     .clk_i,
     .rst_ni,
+    .clr_i      ( 1'b0            ),
     .flush_i    ( 1'b0            ),
-    .testmode_i ( 1'b0            ),
     .full_o     ( read_fifo_full  ),
     .empty_o    ( read_fifo_empty ),
     .usage_o    ( /* open */      ),
@@ -158,14 +158,14 @@ module axi_lite_to_reg #(
   assign read_fifo_in = axi_lite_req_i.ar.addr;
 
   // R Channel
-  fifo_v3 #(
-    .DEPTH        ( BUFFER_DEPTH ),
-    .dtype        ( resp_t       )
+  cc_fifo #(
+    .Depth       ( BUFFER_DEPTH ),
+    .data_t      ( resp_t       )
   ) i_fifo_read_resp (
     .clk_i,
     .rst_ni,
+    .clr_i      ( 1'b0                 ),
     .flush_i    ( 1'b0                 ),
-    .testmode_i ( 1'b0                 ),
     .full_o     ( read_resp_fifo_full  ),
     .empty_o    ( read_resp_fifo_empty ),
     .usage_o    ( /* open */           ),
@@ -194,13 +194,14 @@ module axi_lite_to_reg #(
   assign write_req.addr = write_fifo_out.addr;
   assign write_req.write = 1'b1;
 
-  stream_arbiter #(
-    .DATA_T  ( req_t ),
-    .N_INP   ( 2     ),
-    .ARBITER ( "rr"  )
+  cc_stream_arbiter #(
+    .data_t  ( req_t          ),
+    .NumInp  ( 2              ),
+    .ArbMode ( cc_pkg::ARB_RR )
   ) i_stream_arbiter (
     .clk_i,
     .rst_ni,
+    .clr_i       ( 1'b0                      ),
     .inp_data_i  ( {read_req,   write_req}   ),
     .inp_valid_i ( {read_valid, write_valid} ),
     .inp_ready_o ( {read_ready, write_ready} ),

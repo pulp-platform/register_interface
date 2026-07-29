@@ -49,7 +49,7 @@ module reg_cdc_src #(
 
     if(CDC_KIND == "cdc_4phase") begin: gen_cdc_4phase
 
-       cdc_4phase_src #(.T(req_t)) i_cdc_req_src (
+       cc_cdc_4phase_src #(.data_t(req_t)) i_cdc_req_src (
          .rst_ni       ( src_rst_ni    ),
          .clk_i        ( src_clk_i     ),
          .data_i       ( src_req       ),
@@ -60,7 +60,7 @@ module reg_cdc_src #(
          .async_data_o ( async_data_o  )
        );
 
-       cdc_4phase_dst #(.T(rsp_t)) i_cdc_rsp_dst (
+       cc_cdc_4phase_dst #(.data_t(rsp_t)) i_cdc_rsp_dst (
          .rst_ni       ( src_rst_ni    ),
          .clk_i        ( src_clk_i     ),
          .data_o       ( src_rsp       ),
@@ -73,7 +73,7 @@ module reg_cdc_src #(
 
     end else if (CDC_KIND == "cdc_2phase") begin : gen_cdc_2phase
 
-       cdc_2phase_src #(.T(req_t)) i_cdc_req_src (
+       cc_cdc_2phase_src #(.data_t(req_t)) i_cdc_req_src (
          .rst_ni       ( src_rst_ni    ),
          .clk_i        ( src_clk_i     ),
          .data_i       ( src_req       ),
@@ -84,7 +84,7 @@ module reg_cdc_src #(
          .async_data_o ( async_data_o  )
        );
 
-       cdc_2phase_dst #(.T(rsp_t)) i_cdc_rsp_dst (
+       cc_cdc_2phase_dst #(.data_t(rsp_t)) i_cdc_rsp_dst (
          .rst_ni       ( src_rst_ni    ),
          .clk_i        ( src_clk_i     ),
          .data_o       ( src_rsp       ),
@@ -177,7 +177,7 @@ module reg_cdc_dst #(
 
     if(CDC_KIND == "cdc_4phase") begin: gen_cdc_4phase
 
-       cdc_4phase_dst #(.T(req_t)) i_cdc_req_dst (
+       cc_cdc_4phase_dst #(.data_t(req_t)) i_cdc_req_dst (
          .rst_ni       ( dst_rst_ni    ),
          .clk_i        ( dst_clk_i     ),
          .data_o       ( dst_req       ),
@@ -188,7 +188,7 @@ module reg_cdc_dst #(
          .async_data_i ( async_data_i  )
        );
 
-       cdc_4phase_src #(.T(rsp_t)) i_cdc_rsp_src (
+       cc_cdc_4phase_src #(.data_t(rsp_t)) i_cdc_rsp_src (
          .rst_ni       ( dst_rst_ni    ),
          .clk_i        ( dst_clk_i     ),
          .data_i       ( dst_rsp_q     ),
@@ -201,7 +201,7 @@ module reg_cdc_dst #(
 
     end else if (CDC_KIND == "cdc_2phase") begin : gen_cdc_2phase
 
-       cdc_2phase_dst #(.T(req_t)) i_cdc_req_dst (
+       cc_cdc_2phase_dst #(.data_t(req_t)) i_cdc_req_dst (
          .rst_ni       ( dst_rst_ni    ),
          .clk_i        ( dst_clk_i     ),
          .data_o       ( dst_req       ),
@@ -212,7 +212,7 @@ module reg_cdc_dst #(
          .async_data_i ( async_data_i  )
        );
 
-       cdc_2phase_src #(.T(rsp_t)) i_cdc_rsp_src (
+       cc_cdc_2phase_src #(.data_t(rsp_t)) i_cdc_rsp_src (
          .rst_ni       ( dst_rst_ni    ),
          .clk_i        ( dst_clk_i     ),
          .data_i       ( dst_rsp_q     ),
