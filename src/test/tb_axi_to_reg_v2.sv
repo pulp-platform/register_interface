@@ -84,6 +84,7 @@ module tb_axi_to_reg_v2
   reg_rsp_t reg_rsp;
   axi_id_t  reg_id;
   logic     dut_busy;
+  logic     address_mapping_test_active;
 
   logic end_of_sim;
 
@@ -169,6 +170,19 @@ module tb_axi_to_reg_v2
     .reg_req_i ( reg_req ),
     .reg_rsp_o ( reg_rsp )
   );
+
+  // Check that each register write uses the address encoded in the test data.
+  always @(posedge clk) begin
+    if (address_mapping_test_active && reg_req.valid && reg_req.write) begin
+      if (reg_req.addr !== TbMemBaseAddr + (reg_req.wdata[15:0] * 'h100) +
+          (reg_req.wdata[31:16] * (TbRegDataWidth / 8))) begin
+        $error("[ADDRESS MAPPING] Expected register address 0x%h, got 0x%h",
+               TbMemBaseAddr + (reg_req.wdata[15:0] * 'h100) +
+               (reg_req.wdata[31:16] * (TbRegDataWidth / 8)), reg_req.addr);
+        error_count++;
+      end
+    end
+  end
 
   //////////////////////////
   // Test Classes         //
@@ -319,26 +333,15 @@ module tb_axi_to_reg_v2
     end
   endtask
 
-  // Task to perform a single write-then-read verification (no burst)
-  // Uses full AXI data width
-  task automatic verify_single_write_read(
-    input axi_driver_t drv,
-    input axi_addr_t   addr,
-    input axi_data_t   data,
-    input logic [2:0]  size
-  );
-    automatic axi_data_t read_data;
+  function automatic axi_data_t address_mapping_data(input int unsigned index);
+    axi_data_t data;
 
-    axi_single_write(drv, addr, data, size);
-    axi_single_read(drv, addr, size, read_data);
-
-    // Compare full width data
-    if (read_data !== data) begin
-      $error("[VERIFY] Data mismatch at addr 0x%h: expected 0x%h, got 0x%h",
-             addr, data, read_data);
-      error_count++;
+    data = '0;
+    for (int bank = 0; bank < TbAxiDataWidth / 32; bank++) begin
+      data[bank * 32 +: 32] = {bank[15:0], index[15:0]};
     end
-  endtask
+    return data;
+  endfunction
 
   // Task to perform a burst AXI write transaction (INCR burst)
   // Writes (burst_len+1) beats of full-width AXI data
@@ -351,8 +354,6 @@ module tb_axi_to_reg_v2
     automatic axi_driver_t::ax_beat_t aw_beat = new;
     automatic axi_driver_t::w_beat_t  w_beat  = new;
     automatic axi_driver_t::b_beat_t  b_beat;
-    automatic int unsigned num_bytes = (1 << size);
-
     // Configure AW beat - burst transfer
     aw_beat.ax_addr  = start_addr;
     aw_beat.ax_len   = burst_len[7:0];
@@ -437,6 +438,7 @@ module tb_axi_to_reg_v2
 
     // Initialize
     end_of_sim   = 1'b0;
+    address_mapping_test_active = 1'b0;
     error_count  = 0;
     write_count  = 0;
     read_count   = 0;
@@ -472,114 +474,40 @@ module tb_axi_to_reg_v2
     $display("=========================================\n");
 
     //////////////////////////////////////////////
-    // Test 1: Full AXI-width write/read
+    // Test 1: Address mapping
     //////////////////////////////////////////////
-    $display("[TEST 1] Full AXI-width write/read (64-bit)");
+    $display("[TEST 1] Address mapping (32 full-width transactions)");
     test_start_time = current_cycle;
+    address_mapping_test_active = 1'b1;
 
-    // Use full AXI data width
-    for (int i = 0; i < 10; i++) begin
-      test_addr = TbMemBaseAddr + (i * bytes_per_beat); // AXI-width aligned
-      verify_single_write_read(axi_drv, test_addr,
-                               {TbAxiDataWidth/32{32'hDEAD_0000 + i}}, full_size);
-    end
-
-    test_end_time = current_cycle;
-    $display("[TEST 1] Completed: %0d cycles for 10 transactions", test_end_time - test_start_time);
-    $display("");
-
-    //////////////////////////////////////////////
-    // Test 2: Full-width accesses at various offsets
-    //////////////////////////////////////////////
-    $display("[TEST 2] Full AXI-width accesses at various offsets");
-    test_start_time = current_cycle;
-
-    // Test accesses at different memory regions
-    for (int i = 0; i < 10; i++) begin
-      test_addr = TbMemBaseAddr + 'h100 + (i * bytes_per_beat);
-      verify_single_write_read(axi_drv, test_addr,
-                               {TbAxiDataWidth/32{32'hBEEF_0000 + i}}, full_size);
-    end
-
-    test_end_time = current_cycle;
-    $display("[TEST 2] Completed: %0d cycles for 10 transactions", test_end_time - test_start_time);
-    $display("");
-
-    //////////////////////////////////////////////
-    // Test 3: More full-width accesses
-    //////////////////////////////////////////////
-    $display("[TEST 3] Additional full AXI-width transfers");
-    test_start_time = current_cycle;
-
-    for (int i = 0; i < 10; i++) begin
-      test_addr = TbMemBaseAddr + 'h200 + (i * bytes_per_beat);
-      verify_single_write_read(axi_drv, test_addr,
-                               {TbAxiDataWidth/32{32'hABCD_0000 + i}}, full_size);
-    end
-
-    test_end_time = current_cycle;
-    $display("[TEST 3] Completed: %0d cycles for 10 transactions", test_end_time - test_start_time);
-    $display("");
-
-    //////////////////////////////////////////////
-    // Test 4: Different data patterns
-    //////////////////////////////////////////////
-    $display("[TEST 4] Different data patterns (full AXI width)");
-    test_start_time = current_cycle;
-
-    // All ones
-    test_addr = TbMemBaseAddr + 'h300;
-    verify_single_write_read(axi_drv, test_addr, '1, full_size);
-
-    // All zeros
-    test_addr = TbMemBaseAddr + 'h300 + bytes_per_beat;
-    verify_single_write_read(axi_drv, test_addr, '0, full_size);
-
-    // Checkerboard
-    test_addr = TbMemBaseAddr + 'h300 + 2*bytes_per_beat;
-    verify_single_write_read(axi_drv, test_addr, {TbAxiDataWidth/32{32'hAAAA_5555}}, full_size);
-
-    // Walking ones
-    test_addr = TbMemBaseAddr + 'h300 + 3*bytes_per_beat;
-    verify_single_write_read(axi_drv, test_addr, {TbAxiDataWidth/32{32'h8000_0001}}, full_size);
-
-    test_end_time = current_cycle;
-    $display("[TEST 4] Completed: %0d cycles for pattern tests", test_end_time - test_start_time);
-    $display("");
-
-    //////////////////////////////////////////////
-    // Test 5: Sequential address writes then reads
-    //////////////////////////////////////////////
-    $display("[TEST 5] Sequential writes then reads (32 full-width transactions)");
-    test_start_time = current_cycle;
-
-    // Write 32 values at full AXI width
+    // Write distinct data to widely separated, AXI-width-aligned addresses.
     for (int i = 0; i < 32; i++) begin
-      test_addr = TbMemBaseAddr + 'h400 + (i * bytes_per_beat);
-      axi_single_write(axi_drv, test_addr, {TbAxiDataWidth/32{i[31:0]}}, full_size);
+      test_addr = TbMemBaseAddr + (i * 'h100);
+      axi_single_write(axi_drv, test_addr, address_mapping_data(i), full_size);
     end
 
-    // Read back all 32 values
+    // Read after all writes so address aliases and misrouted accesses are detected.
     for (int i = 0; i < 32; i++) begin
       automatic axi_data_t rdata;
-      automatic axi_data_t expected = {TbAxiDataWidth/32{i[31:0]}};
-      test_addr = TbMemBaseAddr + 'h400 + (i * bytes_per_beat);
+      automatic axi_data_t expected = address_mapping_data(i);
+      test_addr = TbMemBaseAddr + (i * 'h100);
       axi_single_read(axi_drv, test_addr, full_size, rdata);
       if (rdata !== expected) begin
-        $error("[TEST 5] Mismatch at index %0d: expected 0x%h, got 0x%h",
-               i, expected, rdata);
+        $error("[TEST 1] Mismatch at address 0x%h: expected 0x%h, got 0x%h",
+               test_addr, expected, rdata);
         error_count++;
       end
     end
+    address_mapping_test_active = 1'b0;
 
     test_end_time = current_cycle;
-    $display("[TEST 5] Completed: %0d cycles for 64 accesses", test_end_time - test_start_time);
+    $display("[TEST 1] Completed: %0d cycles for 64 accesses", test_end_time - test_start_time);
     $display("");
 
     //////////////////////////////////////////////
-    // Test 6: Random transactions via rand_master
+    // Test 2: Random transactions via rand_master
     //////////////////////////////////////////////
-    $display("[TEST 6] Random AXI transactions (via rand_master)");
+    $display("[TEST 2] Random AXI transactions (via rand_master)");
     $display("         NOTE: rand_master uses bursts which may not be fully supported");
     $display("         Writes: %0d, Reads: %0d", TbNumWrites, TbNumReads);
     test_start_time = current_cycle;
@@ -588,15 +516,15 @@ module tb_axi_to_reg_v2
 
     test_end_time = current_cycle;
     throughput = real'(TbNumReads + TbNumWrites) / real'(test_end_time - test_start_time);
-    $display("[TEST 6] Completed: %0d cycles for %0d transactions",
+    $display("[TEST 2] Completed: %0d cycles for %0d transactions",
              test_end_time - test_start_time, TbNumReads + TbNumWrites);
     $display("         Throughput: %.2f transactions/cycle", throughput);
     $display("");
 
     //////////////////////////////////////////////
-    // Test 7: Throughput - rapid single writes (full AXI width)
+    // Test 3: Throughput - rapid single writes (full AXI width)
     //////////////////////////////////////////////
-    $display("[TEST 7] Throughput - 1000 rapid single writes (full AXI width)");
+    $display("[TEST 3] Throughput - 1000 rapid single writes (full AXI width)");
     test_start_time = current_cycle;
 
     for (int i = 0; i < 1000; i++) begin
@@ -606,14 +534,14 @@ module tb_axi_to_reg_v2
 
     test_end_time = current_cycle;
     throughput = real'(1000) / real'(test_end_time - test_start_time);
-    $display("[TEST 7] Completed: %0d cycles for 1000 writes", test_end_time - test_start_time);
+    $display("[TEST 3] Completed: %0d cycles for 1000 writes", test_end_time - test_start_time);
     $display("         Write throughput: %.2f transactions/cycle", throughput);
     $display("");
 
     //////////////////////////////////////////////
-    // Test 8: Throughput - rapid single reads and verify (full AXI width)
+    // Test 4: Throughput - rapid single reads and verify (full AXI width)
     //////////////////////////////////////////////
-    $display("[TEST 8] Throughput - 1000 rapid single reads with verification (full AXI width)");
+    $display("[TEST 4] Throughput - 1000 rapid single reads with verification (full AXI width)");
     test_start_time = current_cycle;
 
     for (int i = 0; i < 1000; i++) begin
@@ -622,7 +550,7 @@ module tb_axi_to_reg_v2
       test_addr = TbMemBaseAddr + 'h1000 + (i * bytes_per_beat);
       axi_single_read(axi_drv, test_addr, full_size, rdata);
       if (rdata !== expected) begin
-        $error("[TEST 8] Mismatch at addr 0x%h: expected 0x%h, got 0x%h",
+        $error("[TEST 4] Mismatch at addr 0x%h: expected 0x%h, got 0x%h",
                test_addr, expected, rdata);
         error_count++;
       end
@@ -630,12 +558,12 @@ module tb_axi_to_reg_v2
 
     test_end_time = current_cycle;
     throughput = real'(1000) / real'(test_end_time - test_start_time);
-    $display("[TEST 8] Completed: %0d cycles for 1000 reads", test_end_time - test_start_time);
+    $display("[TEST 4] Completed: %0d cycles for 1000 reads", test_end_time - test_start_time);
     $display("         Read throughput: %.2f transactions/cycle", throughput);
     $display("");
 
     //////////////////////////////////////////////
-    // Test 9: Throughput - burst writes and reads
+    // Test 5: Throughput - burst writes and reads
     //////////////////////////////////////////////
     begin
       automatic int unsigned num_bursts = 100;
@@ -645,7 +573,7 @@ module tb_axi_to_reg_v2
       automatic int unsigned burst_size_bytes = (burst_len + 1) * bytes_per_beat;
       automatic logic [2:0]  axi_size = $clog2(TbAxiDataWidth / 8);  // Full bus width
 
-      $display("[TEST 9] Throughput - burst writes (%0d bursts x %0d beats)",
+      $display("[TEST 5] Throughput - burst writes (%0d bursts x %0d beats)",
                num_bursts, burst_len + 1);
       test_start_time = current_cycle;
 
@@ -656,11 +584,11 @@ module tb_axi_to_reg_v2
 
       test_end_time = current_cycle;
       throughput = real'(total_beats) / real'(test_end_time - test_start_time);
-      $display("[TEST 9] Write phase: %0d cycles for %0d beats",
+      $display("[TEST 5] Write phase: %0d cycles for %0d beats",
                test_end_time - test_start_time, total_beats);
       $display("         Burst write throughput: %.2f beats/cycle", throughput);
 
-      $display("[TEST 9] Throughput - burst reads (%0d bursts x %0d beats)",
+      $display("[TEST 5] Throughput - burst reads (%0d bursts x %0d beats)",
                num_bursts, burst_len + 1);
       test_start_time = current_cycle;
 
@@ -671,7 +599,7 @@ module tb_axi_to_reg_v2
 
       test_end_time = current_cycle;
       throughput = real'(total_beats) / real'(test_end_time - test_start_time);
-      $display("[TEST 9] Read phase: %0d cycles for %0d beats",
+      $display("[TEST 5] Read phase: %0d cycles for %0d beats",
                test_end_time - test_start_time, total_beats);
       $display("         Burst read throughput: %.2f beats/cycle", throughput);
       $display("");
