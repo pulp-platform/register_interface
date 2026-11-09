@@ -43,10 +43,20 @@ module periph_to_reg #(
   logic [DW-1:0] r_rdata_d, r_rdata_q;
 
   always_comb begin : proc_logic
-    r_id_d = id_i;
-    r_opc_d = reg_rsp_i.error;
     r_valid_d = gnt_o;
-    r_rdata_d = reg_rsp_i.rdata;
+
+    // Response payload is meaningful only for an accepted request. Hold it
+    // otherwise to expose a common load enable for clock-gating inference.
+    // Valid must still update every cycle to retire the previous response.
+
+    r_id_d = r_id_q;
+    r_opc_d = r_opc_q;
+    r_rdata_d = r_rdata_q;
+    if (gnt_o) begin
+        r_id_d = id_i;
+        r_opc_d = reg_rsp_i.error;
+        r_rdata_d = reg_rsp_i.rdata;
+    end
   end
 
   always_ff @(posedge clk_i or negedge rst_ni) begin : proc_seq
@@ -56,9 +66,9 @@ module periph_to_reg #(
       r_valid_q <= '0;
       r_rdata_q <= '0;
     end else begin
+      r_valid_q <= r_valid_d;
       r_id_q <= r_id_d;
       r_opc_q <= r_opc_d;
-      r_valid_q <= r_valid_d;
       r_rdata_q <= r_rdata_d;
     end
   end
