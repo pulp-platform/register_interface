@@ -10,26 +10,33 @@
 // specific language governing permissions and limitations under the License.
 
 // Florian Zaruba <zarubaf@iis.ee.ethz.ch>
+// Riccardo Tedeschi <riccardo.tedeschi6@unibo.it>
 /// Macros to define register bus request/response structs.
 
 `ifndef REGISTER_INTERFACE_TYPEDEF_SVH_
 `define REGISTER_INTERFACE_TYPEDEF_SVH_
 
-`define REG_BUS_TYPEDEF_REQ(req_t, addr_t, data_t, strb_t) \
-    typedef struct packed { \
+`define REG_BUS_DECL_REQ(addr_t, data_t, strb_t) \
+    struct packed { \
         addr_t addr; \
         logic  write; \
         data_t wdata; \
         strb_t wstrb; \
         logic  valid; \
-    } req_t;
+    }
 
-`define REG_BUS_TYPEDEF_RSP(rsp_t, data_t) \
-    typedef struct packed { \
+`define REG_BUS_TYPEDEF_REQ(req_t, addr_t, data_t, strb_t) \
+    typedef `REG_BUS_DECL_REQ(addr_t, data_t, strb_t) req_t;
+
+`define REG_BUS_DECL_RSP(data_t) \
+    struct packed { \
         data_t rdata; \
         logic  error; \
         logic  ready; \
-    } rsp_t;
+    }
+
+`define REG_BUS_TYPEDEF_RSP(rsp_t, data_t) \
+    typedef `REG_BUS_DECL_RSP(data_t) rsp_t;
 
 `define REG_BUS_TYPEDEF_ALL(name, addr_t, data_t, strb_t) \
     `REG_BUS_TYPEDEF_REQ(name``_req_t, addr_t, data_t, strb_t) \
